@@ -6249,5 +6249,11 @@ window.addEventListener('message',e=>{
 post({t:'ekts-paint-ready'});
 })();
 </script>
+<script>
+/* تشغيل أوفلاين: بيشتغل بس لما الصفحة تتفتح من موقع (http/https). كملف محلي مش محتاج حاجة. */
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+</script>
 </body>
 </html>

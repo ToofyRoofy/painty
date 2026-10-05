@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#eceff3">
+  <title>أدواتي</title>
+  <style>
+    :root { color-scheme: light; --ink:#1d2330; --mute:#6b7488; --line:rgba(255,255,255,.9); --glass:rgba(255,255,255,.72); --shadow:0 10px 34px rgba(60,72,98,.14); }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body { background: #eceff3; color: var(--ink); font-family: system-ui, "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif; }
+    #bg { position: fixed; inset: 0; z-index: -1; background: center/cover no-repeat #eceff3; }
+    .wrap { max-width: 600px; margin: 0 auto; padding: 56px 18px 48px; }
+    h1 { font-size: 34px; font-weight: 300; letter-spacing: .5px; margin: 0 0 26px; text-align: center; text-shadow: 0 1px 0 #fff; }
+    .row { display: block; text-decoration: none; color: inherit; background: var(--glass); -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+           border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 14px 18px; min-height: 64px; margin-bottom: 12px;
+           transition: transform .15s, box-shadow .15s, border-color .15s; }
+    .row:hover, .row:focus { transform: translateY(-2px); border-color: #fff; box-shadow: 0 16px 40px rgba(60,72,98,.2); outline: none; }
+    .name { font-size: 16px; font-weight: 600; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--mute); }
+    @media (prefers-reduced-motion: reduce) { .row { transition: none; } }
+  </style>
+</head>
+<body>
+  <div id="bg"></div>
+  <div class="wrap">
+    <h1>أدواتي</h1>
+    <a class="row" href="MindMap_merged.html"><div class="name">Mind Map</div><div class="sub">الخريطة الذهنية</div></a>
+    <a class="row" href="paint-EKTS-workspace.html"><div class="name">Paint Workspace</div><div class="sub">مساحة الرسم</div></a>
+  </div>
+  <script>
+    (function () {
+      const ribbons = [
+        ['M-120 780 C260 540 720 720 1010 830 S1500 720 1740 400', 74, 0, 1],
+        ['M-100 300 C250 100 640 250 820 470 S1250 640 1720 250', 48, 0, .9],
+        ['M180 1320 C420 980 840 1010 1060 760 S1420 320 1290 -120', 62, 0, 1],
+        ['M-120 1010 C200 900 520 1090 900 1010 S1420 1060 1720 890', 30, 0, .85],
+        ['M600 -120 C520 220 770 370 1010 300 S1310 90 1720 170', 34, 3.2, .8],
+        ['M-120 520 C300 410 610 530 920 430', 12, 2.2, .7],
+        ['M880 1320 C1000 1100 1320 1160 1720 1000', 18, 2.6, .75]
+      ];
+      let defs = '<radialGradient id="bg" cx="55%" cy="45%" r="80%"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e3e6ec"/></radialGradient>'
+        + '<linearGradient id="rb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#f1f3f6"/><stop offset="1" stop-color="#c9ced8"/></linearGradient>'
+        + '<filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="9"/></filter>'
+        + '<filter id="b2"><feGaussianBlur stdDeviation="2.4"/></filter><filter id="b3"><feGaussianBlur stdDeviation="3.6"/></filter>';
+      let body = '<rect width="1600" height="1200" fill="url(#bg)"/>';
+      ribbons.forEach(function (r) {
+        const d = r[0], w = r[1], blur = r[2], op = r[3];
+        const f = blur ? ' filter="url(#' + (blur > 3 ? 'b3' : 'b2') + ')"' : '';
+        body += '<g opacity="' + op + '"' + f + '>'
+          + '<path d="' + d + '" fill="none" stroke="#6b7488" stroke-opacity=".28" stroke-width="' + w + '" stroke-linecap="round" transform="translate(0 16)" filter="url(#sh)"/>'
+          + '<path d="' + d + '" fill="none" stroke="url(#rb)" stroke-width="' + w + '" stroke-linecap="round"/>'
+          + '<path d="' + d + '" fill="none" stroke="#fff" stroke-opacity=".95" stroke-width="' + Math.max(2, w * .24) + '" stroke-linecap="round" transform="translate(' + (-w * .12) + ' ' + (-w * .2) + ')"/></g>';
+      });
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid slice"><defs>' + defs + '</defs>' + body + '</svg>';
+      document.getElementById('bg').style.backgroundImage = 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")';
+    })();
+  </script>
+<script>
+/* تشغيل أوفلاين: بيشتغل بس لما الصفحة تتفتح من موقع (http/https). كملف محلي مش محتاج حاجة. */
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
