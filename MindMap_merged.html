@@ -814,7 +814,12 @@ window.undo = undoAll; window.redo = redoAll;
       const S = resolveLineStyle(line), ca = ctr(a), cb = ctr(b), gA = tree && !S.arrowStart ? 0 : LN.gap, gB = tree && !S.arrowEnd ? 0 : LN.gap;
       let pts = null, anchors = null, wps = S.waypoints, dflt = false, curved = false;
       if (tree) {
-        if (S.shape === 'curved') { const s = b.x >= a.x + a.w ? 1 : -1, A = V(a.x + a.w + s * gA, ca.y), B = V(b.x - s * gB, cb.y), mx = (A.x + B.x) / 2; pts = flatCubic(A, V(mx, A.y), V(mx, B.y), B); curved = true; }
+        /* الافتراضي (curved) = نفس اختيار الجانب في النسخة القديمة (port في mm-core): الاتجاه الغالب بين المركزين — أفقي (يمين↔شمال) أو رأسي (تحت↔فوق).
+           الخط بيعيد الالتصاق بالجانب الأنسب لما تحرك الابن، والمنحنى S بنفس نقاط التحكم القديمة. (straight/elbow/polyline بيستخدموا facing). */
+        if (S.shape === 'curved') { const dx = cb.x - ca.x, dy = cb.y - ca.y, vert = Math.abs(dy) > Math.abs(dx) * 1.2, s = (vert ? dy : dx) > 0 ? 1 : -1;
+          if (vert) { const A = V(ca.x, ca.y + s * (a.h / 2 + gA)), B = V(cb.x, cb.y - s * (b.h / 2 + gB)), my = (A.y + B.y) / 2; pts = flatCubic(A, V(A.x, my), V(B.x, my), B); }
+          else { const A = V(ca.x + s * (a.w / 2 + gA), ca.y), B = V(cb.x - s * (b.w / 2 + gB), cb.y), mx = (A.x + B.x) / 2; pts = flatCubic(A, V(mx, A.y), V(mx, B.y), B); }
+          curved = true; }
         else { const f = facing(a, b), pp = ports(f, gA, gB);
           if (S.shape === 'elbow') pts = elbowPts(f, gA, gB);
           else if (S.shape === 'polyline') { if (!wps.length) { wps = [midP(pp[0], pp[1])]; dflt = true; } anchors = [pp[0]].concat(wps, [pp[1]]); pts = anchors; }
@@ -1302,10 +1307,11 @@ window.undo = undoAll; window.redo = redoAll;
       if (!o) { e.preventDefault(); e.stopImmediatePropagation(); const n = C.create('mindnode', { space: 'mm', parent: null, x: w.x - 60, y: w.y - 20, w: 120, h: 40, data: { title: 'New Topic', richHtml: 'New Topic', order: roots().length, style: { color: theme().node, shape: theme().shape, fontSize: 14 } } }); C.select([n.id]); setTimeout(() => nodeEditor(n.id), 0); } }, true);
     /* لوحة المفاتيح: Tab = فرع، Enter = شقيق — نفس مسار زرار ＋فرع/＋شقيق (mmCreateNodeV2).
        بيشتغل بس لما التركيز جوه #mmTab (نفس نطاق الـlistener القديم في mm-core)، ومن غير عقدة واحدة محددة
-       بيسيب الحدث للـlistener القديم هناك (Delete / F2 / Ctrl+Z / Ctrl+Y لسه هناك). */
+       بيسيب الحدث للـlistener القديم هناك (Delete / Ctrl+Z / Ctrl+Y لسه هناك). F2 = محرر العقدة الغني زي زرار ✎. */
     document.addEventListener('keydown', e => { if (C.ui.space !== 'mm' || !(e.target.closest && e.target.closest('#mmTab'))) return;
       if ([e.target, document.activeElement].some(x => x && (x.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(x.tagName)))) return;
       const n = C.ui.sel.size === 1 ? C.get([...C.ui.sel][0]) : null; if (!n || n.type !== 'mindnode') return;
+      if (e.key === 'F2') { e.preventDefault(); e.stopImmediatePropagation(); nodeEditor(n.id); return; }
       if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); mmCreateNodeV2(e.key === 'Tab' ? 'child' : 'sibling'); } }, true);
     document.addEventListener('pointerdown', e => {
       if (editingNode) { const layer = document.getElementById('mmRichLayer2'); const activeEl = layer && layer.querySelector('.mmRichNode2[data-id="' + CSS.escape(editingNode) + '"]'); const insideToolbar = e.target.closest && e.target.closest('#mmNodeFormat2'); const insideNode = activeEl && activeEl.contains(e.target); if (!insideToolbar && !insideNode) closeNodeEditor(true); }
@@ -3268,7 +3274,7 @@ window.MMProjects = { openProject, goPicker, newProject, flush, Store, saveCopy 
     /* ----- Mind Map Toolbar (data-a) ----- */
     child:   { name: 'إضافة فرع (Add Child)', use: 'ينشئ عقدة جديدة كفرع من العقدة المحددة ويفتح محررها مباشرة.', info: 'بدون تحديد تُنشأ عقدة رئيسية في منتصف الشاشة.', keys: 'Tab' },
     sibling: { name: 'إضافة شقيق (Add Sibling)', use: 'ينشئ عقدة في نفس مستوى العقدة المحددة، أسفلها مباشرة، ويفتح محررها.', info: 'يتطلب تحديد عقدة واحدة.', keys: 'Enter' },
-    rename:  { name: 'إعادة تسمية (Rename)', use: 'يفتح محرر العقدة المحددة لتعديل نصها وتنسيقه.', info: 'يتطلب تحديد عقدة. الضغط مرتين على العقدة يفتح نفس المحرر.' },
+    rename:  { name: 'إعادة تسمية (Rename)', use: 'يفتح محرر العقدة المحددة لتعديل نصها وتنسيقه.', info: 'يتطلب تحديد عقدة. الضغط مرتين على العقدة يفتح نفس المحرر.', keys: 'F2' },
     dup:     { name: 'نسخ الفرع (Duplicate)', use: 'ينسخ العقدة المحددة بكل فروعها ويضع النسخة بعدها مباشرة في نفس المستوى.', info: 'يتطلب تحديد عقدة واحدة.' },
     del:     { name: 'حذف (Delete)', use: 'يحذف العنصر المحدد.', info: 'حذف عقدة يحذف معها كل فروعها والعلاقات المرتبطة بها. يمكن التراجع.', keys: 'Delete / Backspace' },
     fold:    { name: 'طيّ / فتح (Collapse / Expand)', use: 'يخفي فروع العقدة المحددة، أو يُظهرها إن كانت مطويّة.', info: 'يعمل مع عقدة لها فروع فقط.' },
