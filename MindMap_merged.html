@@ -1104,18 +1104,20 @@ window.undo = undoAll; window.redo = redoAll;
       const loadImg = (src, cors) => new Promise(res => { const i = new Image(); if (cors) i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
       async function normSrc(src) { if (okSrc(src)) return src; const i = await loadImg(src); if (!i) return null; /* صيغ مش في القايمة (svg/bmp/avif) → PNG آمن */
         try { const c = document.createElement('canvas'); c.width = i.naturalWidth || 300; c.height = i.naturalHeight || 150; c.getContext('2d').drawImage(i, 0, 0); const o = c.toDataURL('image/png'); return okSrc(o) ? o : null; } catch (_) { return null; } }
-      async function insert(nid, src, nw, nh, alt) { src = await normSrc(src); if (!src) { alert('صيغة الصورة مش مدعومة.'); return null; }
+      /* خصائص إضافية لصورة/معادلة العقدة عند اللصق (من نسخة): rot / locked / مشروع Paint (لو لسه مطابق للصورة) */
+      const keepProps = (x, src) => { const o = {}; if (x) { if (+x.rot) o.rot = Math.round(+x.rot); if (x.locked) o.locked = true; if (src && x.proj && x.pv && x.pv === window.MM_hash(src)) { o.proj = x.proj; o.pv = x.pv; } } return o; };
+      async function insert(nid, src, nw, nh, alt, extra) { src = await normSrc(src); if (!src) { alert('صيغة الصورة مش مدعومة.'); return null; }
         const n0 = C.get(nid); if (!n0) return null; const p = padOf(n0), g = gapOf(n0), ar = (nh || 80) / Math.max(1, nw || 120);
         let w = Math.min(160, Math.max(40, nw || 120)), newW = n0.w; if (w > n0.w - 2 * p) { newW = Math.min(220, Math.max(n0.w, w + 2 * p)); w = Math.min(w, newW - 2 * p); }
         let h = w * ar; if (h > 260) { h = 260; w = h / ar; } const id = mkId();
         C.tx('image', () => { const n = C.get(nid), arr = all(n).slice(), L = valid(n), bottom = L.reduce((m, im) => Math.max(m, (+im.y || 0) + (+im.h || 0)), 0);
-          arr.push({ id, src, x: r2(Math.max(0, (newW - w) / 2)), y: L.length ? r2(bottom + g) : p, w: r2(w), h: r2(h), alt: alt || '' }); apply(nid, arr, 'image', newW !== n.w ? { w: newW } : null); });
+          arr.push(Object.assign({ id, src, x: r2(Math.max(0, (newW - w) / 2)), y: L.length ? r2(bottom + g) : p, w: r2(w), h: r2(h), alt: alt || '' }, keepProps(extra, src))); apply(nid, arr, 'image', newW !== n.w ? { w: newW } : null); });
         pick(nid, id); return id; }
       const cleanEq = t => String(t || '').replace(/[\s\u00a0]+/g, ' ').trim().slice(0, 500);
       function eqNat(text) { const MQ = window.MMEq, ml = MQ ? MQ.mathml(text) : ''; if (!ml) return null; const d = document.createElement('div'); d.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden'; d.innerHTML = '<span class="mq" style="margin:0">' + ml + '</span>'; document.body.appendChild(d); const q = d.firstChild, r = { w: q.offsetWidth, h: q.offsetHeight }; d.remove(); return r.w > 0 && r.h > 0 ? r : null; }
-      function insertEq(nid, text) { text = cleanEq(text); const nt = text && eqNat(text), n0 = C.get(nid); if (!nt || !n0) return null; const p = padOf(n0), g = gapOf(n0); let w = Math.min(nt.w, Math.max(40, n0.w - 2 * p)); const h = w * nt.h / nt.w, id = mkId();
+      function insertEq(nid, text, extra) { text = cleanEq(text); const nt = text && eqNat(text), n0 = C.get(nid); if (!nt || !n0) return null; const p = padOf(n0), g = gapOf(n0); let w = Math.min(nt.w, Math.max(40, n0.w - 2 * p)); const h = w * nt.h / nt.w, id = mkId();
         C.tx('image', () => { const n = C.get(nid), arr = all(n).slice(), L = valid(n), bottom = L.reduce((m, im) => Math.max(m, (+im.y || 0) + (+im.h || 0)), 0);
-          arr.push({ id, eq: text, x: r2(Math.max(0, (n.w - w) / 2)), y: L.length ? r2(bottom + g) : p, w: r2(w), h: r2(h) }); apply(nid, arr, 'image'); });
+          arr.push(Object.assign({ id, eq: text, x: r2(Math.max(0, (n.w - w) / 2)), y: L.length ? r2(bottom + g) : p, w: r2(w), h: r2(h) }, keepProps(extra))); apply(nid, arr, 'image'); });
         pick(nid, id); return id; }
       const newEq = nid => !!(nid && C.get(nid) && window.MMEq && window.MMEq.openFor('', t => { insertEq(nid, t); })); /* زي زرار المعادلة في Rich note: نافذة ← عنصر حر */
       function editEq(nid, iid) { const n = C.get(nid), im = n && imgOf(n, iid); if (!im || !im.eq || !window.MMEq) return;
@@ -1616,7 +1618,13 @@ window.undo = undoAll; window.redo = redoAll;
     /* Image Layer: الصور بقت طبقة مستقلة (#mmN2imgs) جنب طبقة النص (#mmN2edit) — بإحداثيات x/y/w/h خاصة بيها، ومش جزء من Text Flow */
     function addLayerImg(o) { const src = safeImgSrc(o && o.src); if (!src) return null; const im = document.createElement('img'); im.dataset.iid = o.id || newUid(); im.setAttribute('src', src); im.setAttribute('alt', o.alt || ''); im.draggable = false;
       im.style.left = (+o.x || 0) + 'px'; im.style.top = (+o.y || 0) + 'px'; im.style.width = (+o.w || 120) + 'px'; im.style.height = (+o.h || 90) + 'px'; if (o.locked) im.dataset.locked = '1'; if (+o.rot) setImgRot(im, +o.rot); if (o.proj && o.pv) { im.__proj = o.proj; im.__pv = o.pv; } note2Layer.appendChild(im); return im; }
-    const serializeLayer = () => [...note2Layer.querySelectorAll(LAYER_SEL)].map(im => isEqEl(im) ? serializeEq(im) : Object.assign({ id: im.dataset.iid, src: safeImgSrc(im.getAttribute('src')), alt: im.getAttribute('alt') || '', x: Math.round(parseFloat(im.style.left) || 0), y: Math.round(parseFloat(im.style.top) || 0), w: Math.round(parseFloat(im.style.width) || im.offsetWidth || 0), h: Math.round(parseFloat(im.style.height) || im.offsetHeight || 0), locked: im.dataset.locked === '1' }, (parseFloat(im.dataset.rot) || 0) ? { rot: Math.round(parseFloat(im.dataset.rot)) } : {}, (im.__proj && im.__pv === window.MM_hash(im.getAttribute('src'))) ? { proj: im.__proj, pv: im.__pv } : {})).filter(o => o.src || o.eq);
+    /* إضافة صورة جديدة للملاحظة — مسار واحد لكل الطرق (زرار الصورة، Ctrl+V، لصق صورة من برّه): نفس المقاس والتحديد. المكان = نص الشاشة الظاهر، أو pos ({x,y} بإحداثيات الملاحظة) لو متحدد. */
+    async function addNoteImage(data, alt, pos) { if (!note2Layer || !note2Id) return null;
+      const im = await imageDims(data), cw = note2Wrap.clientWidth || 600, z = mzZoom || 1, w = Math.min(320, cw * 0.7, im.w || 200), h = w * ((im.h || 150) / Math.max(1, im.w || 200));
+      const el = addLayerImg({ src: data, alt: alt || '', x: pos ? pos.x : Math.max(0, (note2Wrap.scrollLeft + cw / 2) / z - w / 2), y: pos ? pos.y : Math.max(0, (note2Wrap.scrollTop + note2Wrap.clientHeight / 2) / z - h / 2), w, h });
+      if (el) { deselectBox(); selectImage(el); } return el; }
+    const serializeLayerEl = im => isEqEl(im) ? serializeEq(im) : Object.assign({ id: im.dataset.iid, src: safeImgSrc(im.getAttribute('src')), alt: im.getAttribute('alt') || '', x: Math.round(parseFloat(im.style.left) || 0), y: Math.round(parseFloat(im.style.top) || 0), w: Math.round(parseFloat(im.style.width) || im.offsetWidth || 0), h: Math.round(parseFloat(im.style.height) || im.offsetHeight || 0), locked: im.dataset.locked === '1' }, (parseFloat(im.dataset.rot) || 0) ? { rot: Math.round(parseFloat(im.dataset.rot)) } : {}, (im.__proj && im.__pv === window.MM_hash(im.getAttribute('src'))) ? { proj: im.__proj, pv: im.__pv } : {});
+    const serializeLayer = () => [...note2Layer.querySelectorAll(LAYER_SEL)].map(serializeLayerEl).filter(o => o.src || o.eq);
     /* ---------- Floating Chat Box: عنصر مستقل (طبقة #mmN2boxes) — مش Mind Node ومش جزء من Text Flow؛ ممكن يترتبط بصورة بـid ثابت + offset نسبي ---------- */
     const imgRect = im => ({ l: parseFloat(im.style.left) || 0, t: parseFloat(im.style.top) || 0, w: parseFloat(im.style.width) || im.offsetWidth || 0, h: parseFloat(im.style.height) || im.offsetHeight || 0 });
     const boxSize = b => ({ w: parseFloat(b.style.width) || b.offsetWidth || 160, h: parseFloat(b.style.height) || b.offsetHeight || 80 });
@@ -1696,8 +1704,7 @@ window.undo = undoAll; window.redo = redoAll;
     noteImageInput2.onchange = async () => { const f = noteImageInput2.files[0]; noteImageInput2.value = ''; if (!f) { replaceImgTarget = null; return; }
       const data = await fileData(f);
       if (replaceImgTarget) { replaceImgTarget.src = data; replaceImgTarget.alt = f.name; replaceImgTarget = null; if (selImg) positionImgOverlay(); } // استبدال في نفس المكان بنفس الحجم/الموضع
-      else if (note2Layer && note2Id) { const im = await imageDims(data), cw = note2Wrap.clientWidth || 600, w = Math.min(320, cw * 0.7, im.w || 200), h = w * ((im.h || 150) / Math.max(1, im.w || 200));
-        const el = addLayerImg({ src: data, alt: f.name, x: Math.max(0, (note2Wrap.scrollLeft + cw / 2) / (mzZoom || 1) - w / 2), y: Math.max(0, (note2Wrap.scrollTop + note2Wrap.clientHeight / 2) / (mzZoom || 1) - h / 2), w, h }); if (el) selectImage(el); } }; /* الصورة الجديدة بتتضاف لطبقة الصور، مش لتدفق النص */
+      else if (note2Layer && note2Id) await addNoteImage(data, f.name); }; /* الصورة الجديدة بتتضاف لطبقة الصور، مش لتدفق النص */
     /* ---------- Text Size (A− / A+) — Formatting حقيقي على التحديد بس، بمستويات ثابتة ----------
        التطبيق على التحديد بيتم بـinsertHTML (خطوة Undo/Redo أصلية للمتصفح) مش بتعديل DOM يدوي بعد execCommand،
        والتحديد بيتحفظ بعد كل ضغطة عشان A+ / A− يتكرروا على نفس النص. */
@@ -1925,33 +1932,34 @@ window.undo = undoAll; window.redo = redoAll;
     window.addEventListener('blur', () => { imgClipStale = true; }); /* المستخدم سابع الصفحة: ممكن يكون نسخ حاجة برا، فاللصق الجاي يفحص حافظة النظام الأول */
     function clipToast(m) { const t = document.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 14px;border-radius:10px;font-size:13px;z-index:2300;max-width:90%;pointer-events:none'; document.body.appendChild(t); setTimeout(() => t.remove(), 1600); }
     function toPngData(src) { return new Promise(res => { const i = new Image(); i.onload = () => { try { const c = document.createElement('canvas'); c.width = i.naturalWidth || 120; c.height = i.naturalHeight || 90; c.getContext('2d').drawImage(i, 0, 0); res(c.toDataURL('image/png')); } catch (e) { res(''); } }; i.onerror = () => res(''); i.src = src; }); }
-    function imgClipRead(im) { /* عنصر (صورة/معادلة، ملاحظة أو عقدة) → بيانات قابلة للنسخ */
+    function imgClipRead(im) { /* عنصر (صورة/معادلة، ملاحظة أو عقدة) → كل خصائصه (src/eq, alt, w, h, rot, locked, proj+pv) ماعدا الهوية والمكان — نفس مجموعة الخصائص اللي بتتحفظ مع الملاحظة */
       if (im.dataset.nodeImg === '1') { const NI = window.MM.nodeImg, d = NI && NI.getImg && NI.getImg(im.dataset.nodeId, im.dataset.iid); if (!d) return null;
-        if (d.eq) return { eq: String(d.eq), w: +d.w || 0, h: +d.h || 0, rot: +d.rot || 0 };
-        return d.src ? { src: d.src, alt: d.alt || '', w: +d.w || 0, h: +d.h || 0, rot: +d.rot || 0 } : null; }
-      const w = parseFloat(im.style.width) || im.offsetWidth || 0, h = parseFloat(im.style.height) || im.offsetHeight || 0;
-      if (isEqEl(im)) return im.dataset.eq ? { eq: im.dataset.eq, w, h, rot: imgRot(im) } : null;
-      const src = safeImgSrc(im.getAttribute('src')); return src ? { src, alt: im.getAttribute('alt') || '', w, h, rot: imgRot(im) } : null; }
+        const o = d.eq ? { eq: String(d.eq) } : d.src ? { src: d.src, alt: d.alt || '' } : null; if (!o) return null;
+        o.w = +d.w || 0; o.h = +d.h || 0; o.rot = +d.rot || 0; if (d.locked) o.locked = true; if (d.src && d.proj && d.pv === window.MM_hash(d.src)) { o.proj = d.proj; o.pv = d.pv; } return o; }
+      const o = serializeLayerEl(im); if (!(o.src || o.eq)) return null; delete o.id; delete o.x; delete o.y; delete o.s; o.rot = +o.rot || 0; return o; }
     function imgClipToSystem(c) { try { if (!navigator.clipboard) return;
       if (c.eq) { navigator.clipboard.writeText(c.eq).catch(() => { }); return; }
       if (!window.ClipboardItem || !navigator.clipboard.write) return;
       const p = new Promise((res, rej) => { const i = new Image(); i.onload = () => { try { const cv = document.createElement('canvas'); cv.width = i.naturalWidth || c.w || 120; cv.height = i.naturalHeight || c.h || 90; cv.getContext('2d').drawImage(i, 0, 0); cv.toBlob(b => { if (b) { imgClipSig = b.size; res(b); } else rej(new Error('blob')); }, 'image/png'); } catch (e) { rej(e); } }; i.onerror = () => rej(new Error('img')); i.src = c.src; });
       navigator.clipboard.write([new ClipboardItem({ 'image/png': p })]).catch(() => { }); } catch (e) { } }
-    async function imgClipResolve() { /* صورة من حافظة النظام (لو جاية من برا) وإلا الحافظة الداخلية */
+    async function imgClipResolve(file) { /* صورة من حافظة النظام (لو جاية من برا) وإلا الحافظة الداخلية */
+      if (file) { /* Ctrl+V: الصورة جاية مع الـevent نفسه — لو هي نفس اللي نسخناها من جوه (نفس حجم الـPNG) نستخدم الحافظة الداخلية بكل خصائصها، وإلا تتعامل كصورة خارجية */
+        if (imgClip && imgClipSig && file.size === imgClipSig) return imgClip; const src = await fileData(file), d = await imageDims(src); return { src, alt: file.name || '', w: d.w, h: d.h, rot: 0, ext: true }; }
       if (!imgClip || imgClipStale) { try { if (navigator.clipboard && navigator.clipboard.read) { const items = await navigator.clipboard.read();
         for (const it of items) { const t = it.types.find(x => x.indexOf('image/') === 0); if (!t) continue; const b = await it.getType(t);
           if (!imgClip || b.size !== imgClipSig) { const src = await fileData(b), d = await imageDims(src); imgClipStale = false; return { src, alt: '', w: d.w, h: d.h, rot: 0, ext: true }; } break; } } } catch (e) { } }
       imgClipStale = false; return imgClip; }
-    async function imgClipPaste(o) { const c = await imgClipResolve(); if (!c) { clipToast('مفيش صورة أو معادلة منسوخة'); return; }
+    async function imgClipPaste(o) { const c = await imgClipResolve(o.file); if (!c) { clipToast('مفيش صورة أو معادلة منسوخة'); return; }
       const t = o.target, nid = o.node || (t && t.dataset && t.dataset.nodeImg === '1' ? t.dataset.nodeId : null);
-      if (nid) { const NI = window.MM.nodeImg; if (!NI || !C.get(nid)) return; if (c.eq) NI.insertEq(nid, c.eq); else await NI.insert(nid, c.src, c.w, c.h, c.alt || ''); renderDeep(); refreshNodeDom(); return; }
+      if (nid) { const NI = window.MM.nodeImg; if (!NI || !C.get(nid)) return; if (c.eq) NI.insertEq(nid, c.eq, c); else await NI.insert(nid, c.src, c.w, c.h, c.alt || '', c); renderDeep(); refreshNodeDom(); return; }
       if (!note2 || !note2Id || !note2Layer || !note2.classList.contains('show')) { clipToast('افتح ملاحظة أو اختار عقدة الأول'); return; }
-      let x = 24, y = 24; if (t && t.isConnected) { const r = imgRect(t); x = r.l + 24; y = r.t + 24; } else if (o.at) { const cr = note2Content.getBoundingClientRect(), z = mzZoom || 1; x = (o.at.x - cr.left) / z; y = (o.at.y - cr.top) / z; }
-      x = Math.max(0, x); y = Math.max(0, y); let w = +c.w > 0 ? +c.w : 120, h = +c.h > 0 ? +c.h : 90, el = null;
-      if (c.eq) el = addLayerEq({ eq: c.eq, x, y, w, h, rot: c.rot });
+      let pos = null; if (t && t.isConnected) { const r = imgRect(t); pos = { x: r.l + 24, y: r.t + 24 }; } else if (o.at) { const cr = note2Content.getBoundingClientRect(), z = mzZoom || 1; pos = { x: (o.at.x - cr.left) / z, y: (o.at.y - cr.top) / z }; }
+      if (pos) { pos.x = Math.max(0, pos.x); pos.y = Math.max(0, pos.y); } let w = +c.w > 0 ? +c.w : 120, h = +c.h > 0 ? +c.h : 90, el = null;
+      const mid = () => { const cw = note2Wrap.clientWidth || 600, z = mzZoom || 1; return { x: Math.max(0, (note2Wrap.scrollLeft + cw / 2) / z - w / 2), y: Math.max(0, (note2Wrap.scrollTop + note2Wrap.clientHeight / 2) / z - h / 2) }; }; /* من غير مكان محدد (Ctrl+V): نص الشاشة الظاهر زي الإضافة */
+      if (c.eq) { const p = pos || mid(); el = addLayerEq(Object.assign({}, c, { x: p.x, y: p.y, w, h })); }
       else { let src = c.src; if (!safeImgSrc(src)) src = await toPngData(src); if (!src) { clipToast('صيغة الصورة مش مدعومة'); return; }
-        if (c.ext) { w = Math.min(320, w); h = w * ((c.h || 90) / Math.max(1, c.w || 120)); }
-        el = addLayerImg({ src, alt: c.alt || '', x, y, w, h, rot: c.rot }); }
+        if (c.ext) el = await addNoteImage(src, c.alt || '', pos); /* صورة من برّه = نفس الإضافة بالظبط (المقاس، التحديد) */
+        else { const p = pos || mid(); el = addLayerImg(Object.assign({}, c, { src, alt: c.alt || '', x: p.x, y: p.y, w, h })); } } /* نسخة من جوه = نسخة كاملة بكل الخصائص (rot/locked/Paint) */
       if (!el) { clipToast('تعذّر اللصق'); return; } deselectBox(); selectImage(el); }
     function imgClipAction(a, im) { if (a === 'paste') { imgClipPaste({ target: im }); return; }
       const c = imgClipRead(im); if (!c) { clipToast('مش قادر أنسخ العنصر ده'); return; }
@@ -1973,6 +1981,13 @@ window.undo = undoAll; window.redo = redoAll;
     document.addEventListener('pointermove', e => { if (blankLP && e.pointerId === blankLP.id && Math.hypot(e.clientX - blankLP.x0, e.clientY - blankLP.y0) > IMG_LP_MOVE) blankLPStop(); }, true);
     ['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, blankLPStop, true));
     Object.assign(window.MM, { imgClipHas: () => !!imgClip, imgPasteNode: nid => imgClipPaste({ node: nid }) });
+    /* Ctrl+V في الملاحظة: صورة (screenshot / منسوخة من برّه أو من جوه) بتعدّي على نفس مسار اللصق/الإضافة (عنصر طبقة كامل الخصائص) بدل <img> عادية جوه النص.
+       HTML فيه صور من غير ملف صورة → الصور بتتحوّل لطبقة بنفس مسار التحويل القديم (migrateLegacyImgs). */
+    document.addEventListener('paste', e => { const cd = e.clipboardData; if (!cd || e.defaultPrevented || !note2 || !note2Id || !note2.classList.contains('show')) return;
+      const t = e.target; if (t && t.nodeType === 1 && ((t.closest && t.closest('input,textarea,select')) || (t !== document.body && !note2.contains(t)))) return;
+      const fs = [...(cd.files || [])].filter(f => /^image\//i.test(f.type)), its = !fs.length && cd.items ? [...cd.items].filter(i => i.kind === 'file' && /^image\//i.test(i.type)).map(i => i.getAsFile()).filter(Boolean) : [], f = fs[0] || its[0];
+      if (f) { e.preventDefault(); imgClipPaste({ file: f }); return; }
+      if (t && note2Edit.contains(t) && /<img[\s>]/i.test(cd.getData('text/html') || '')) { const id = note2Id; setTimeout(() => migrateLegacyImgs(id), 0); } });
     function startMove(e) { if (!selImg || isImgLocked(selImg)) return; e.preventDefault(); e.stopPropagation();
       imgDrag = { mode: 'move', pid: e.pointerId, x0: e.clientX, y0: e.clientY, startLeft: parseFloat(selImg.style.left) || 0, startTop: parseFloat(selImg.style.top) || 0 }; }
     const IMG_MIN = 32, IMG_MAX = 8000, imgMin = el => isEqEl(el) ? 14 : IMG_MIN; /* المعادلة تقدر تصغر أكتر من الصورة (نصها صغير أصلاً) */ /* حد أدنى يخلّي الصورة قابلة للإمساك، وحد أقصى كبير بيناسب الـFreeform Workspace */
