@@ -1928,7 +1928,7 @@ window.undo = undoAll; window.redo = redoAll;
 #mmImgMenu .mmClipRow{display:flex;gap:2px}#mmImgMenu .mmClipRow button{flex:1;justify-content:center;white-space:nowrap;padding:7px 4px}
 #mmPasteMenu{position:fixed;z-index:2200;display:none;min-width:150px;padding:3px;background:#fff;border:1px solid #c9c5b8;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.25);font-size:12px;direction:rtl;-webkit-user-select:none;user-select:none}
 #mmPasteMenu button{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;margin:0;padding:8px 10px;border:0;background:none;text-align:right;font:inherit;cursor:pointer;border-radius:4px}#mmPasteMenu button:hover{background:#f0eee7}`));
-    let imgClip = null, imgClipSig = 0, imgClipStale = false, blankLP = null, pasteMenu = null, pasteMenuAt = 0;
+    let imgClip = null, imgClipSig = 0, imgClipStale = false, imgClipTxt = '', blankLP = null, pasteMenu = null, pasteMenuAt = 0;
     window.addEventListener('blur', () => { imgClipStale = true; }); /* المستخدم سابع الصفحة: ممكن يكون نسخ حاجة برا، فاللصق الجاي يفحص حافظة النظام الأول */
     function clipToast(m) { const t = document.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 14px;border-radius:10px;font-size:13px;z-index:2300;max-width:90%;pointer-events:none'; document.body.appendChild(t); setTimeout(() => t.remove(), 1600); }
     function toPngData(src) { return new Promise(res => { const i = new Image(); i.onload = () => { try { const c = document.createElement('canvas'); c.width = i.naturalWidth || 120; c.height = i.naturalHeight || 90; c.getContext('2d').drawImage(i, 0, 0); res(c.toDataURL('image/png')); } catch (e) { res(''); } }; i.onerror = () => res(''); i.src = src; }); }
@@ -1942,14 +1942,15 @@ window.undo = undoAll; window.redo = redoAll;
       if (!window.ClipboardItem || !navigator.clipboard.write) return;
       const p = new Promise((res, rej) => { const i = new Image(); i.onload = () => { try { const cv = document.createElement('canvas'); cv.width = i.naturalWidth || c.w || 120; cv.height = i.naturalHeight || c.h || 90; cv.getContext('2d').drawImage(i, 0, 0); cv.toBlob(b => { if (b) { imgClipSig = b.size; res(b); } else rej(new Error('blob')); }, 'image/png'); } catch (e) { rej(e); } }; i.onerror = () => rej(new Error('img')); i.src = c.src; });
       navigator.clipboard.write([new ClipboardItem({ 'image/png': p })]).catch(() => { }); } catch (e) { } }
-    async function imgClipResolve(file) { /* صورة من حافظة النظام (لو جاية من برا) وإلا الحافظة الداخلية */
+    async function imgClipResolve(file, internal) { /* صورة من حافظة النظام (لو جاية من برا) وإلا الحافظة الداخلية */
+      if (internal && imgClip) return imgClip; /* Ctrl+V لنص معادلة اتنسخت من جوه: الصندوق نفسه من غير قراءة حافظة النظام */
       if (file) { /* Ctrl+V: الصورة جاية مع الـevent نفسه — لو هي نفس اللي نسخناها من جوه (نفس حجم الـPNG) نستخدم الحافظة الداخلية بكل خصائصها، وإلا تتعامل كصورة خارجية */
         if (imgClip && imgClipSig && file.size === imgClipSig) return imgClip; const src = await fileData(file), d = await imageDims(src); return { src, alt: file.name || '', w: d.w, h: d.h, rot: 0, ext: true }; }
       if (!imgClip || imgClipStale) { try { if (navigator.clipboard && navigator.clipboard.read) { const items = await navigator.clipboard.read();
         for (const it of items) { const t = it.types.find(x => x.indexOf('image/') === 0); if (!t) continue; const b = await it.getType(t);
           if (!imgClip || b.size !== imgClipSig) { const src = await fileData(b), d = await imageDims(src); imgClipStale = false; return { src, alt: '', w: d.w, h: d.h, rot: 0, ext: true }; } break; } } } catch (e) { } }
       imgClipStale = false; return imgClip; }
-    async function imgClipPaste(o) { const c = await imgClipResolve(o.file); if (!c) { clipToast('مفيش صورة أو معادلة منسوخة'); return; }
+    async function imgClipPaste(o) { const c = await imgClipResolve(o.file, o.internal); if (!c) { clipToast('مفيش صورة أو معادلة منسوخة'); return; }
       const t = o.target, nid = o.node || (t && t.dataset && t.dataset.nodeImg === '1' ? t.dataset.nodeId : null);
       if (nid) { const NI = window.MM.nodeImg; if (!NI || !C.get(nid)) return; if (c.eq) NI.insertEq(nid, c.eq, c); else await NI.insert(nid, c.src, c.w, c.h, c.alt || '', c); renderDeep(); refreshNodeDom(); return; }
       if (!note2 || !note2Id || !note2Layer || !note2.classList.contains('show')) { clipToast('افتح ملاحظة أو اختار عقدة الأول'); return; }
@@ -1963,7 +1964,7 @@ window.undo = undoAll; window.redo = redoAll;
       if (!el) { clipToast('تعذّر اللصق'); return; } deselectBox(); selectImage(el); }
     function imgClipAction(a, im) { if (a === 'paste') { imgClipPaste({ target: im }); return; }
       const c = imgClipRead(im); if (!c) { clipToast('مش قادر أنسخ العنصر ده'); return; }
-      imgClip = c; imgClipSig = 0; imgClipStale = false; imgClipToSystem(c);
+      imgClip = c; imgClipSig = 0; imgClipStale = false; imgClipTxt = c.eq ? String(c.eq) : ''; imgClipToSystem(c);
       if (a === 'cut') { if (im.dataset.nodeImg === '1') window.MM.nodeImg.remove(im.dataset.nodeId, im.dataset.iid); else deleteSelectedImage(im); }
       clipToast(a === 'cut' ? 'تم القص' : 'تم النسخ'); }
     function hidePasteMenu() { if (pasteMenu) pasteMenu.style.display = 'none'; }
@@ -1981,13 +1982,30 @@ window.undo = undoAll; window.redo = redoAll;
     document.addEventListener('pointermove', e => { if (blankLP && e.pointerId === blankLP.id && Math.hypot(e.clientX - blankLP.x0, e.clientY - blankLP.y0) > IMG_LP_MOVE) blankLPStop(); }, true);
     ['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, blankLPStop, true));
     Object.assign(window.MM, { imgClipHas: () => !!imgClip, imgPasteNode: nid => imgClipPaste({ node: nid }) });
-    /* Ctrl+V في الملاحظة: صورة (screenshot / منسوخة من برّه أو من جوه) بتعدّي على نفس مسار اللصق/الإضافة (عنصر طبقة كامل الخصائص) بدل <img> عادية جوه النص.
-       HTML فيه صور من غير ملف صورة → الصور بتتحوّل لطبقة بنفس مسار التحويل القديم (migrateLegacyImgs). */
-    document.addEventListener('paste', e => { const cd = e.clipboardData; if (!cd || e.defaultPrevented || !note2 || !note2Id || !note2.classList.contains('show')) return;
-      const t = e.target; if (t && t.nodeType === 1 && ((t.closest && t.closest('input,textarea,select')) || (t !== document.body && !note2.contains(t)))) return;
+    /* ---- Copy / Cut / Paste كـObject للصور وصناديق المعادلة (Ctrl/Cmd + C / X / V) — نفس مسار القايمة (imgClipAction / imgClipPaste) ----
+       C/X: على العنصر المحدد (ملاحظة أو عقدة)؛ مفيش تعارض مع نسخ نص متحدد أو input/textarea؛ القص على عنصر مقفول بينسخ بس (زي Delete).
+       V: صورة (ملف) = زي الإضافة بالظبط، أو نسخة من جوه بكل خصائصها؛ ونص معادلة اتنسخت من جوه = الصندوق نفسه (Ctrl+Shift+V = النص كنص).
+       مكان اللصق: الملاحظة المفتوحة، أو العقدة المحددة لو مفيش ملاحظة. HTML فيه صور من غير ملف صورة → الصور بتتحوّل لطبقة (migrateLegacyImgs). */
+    let pasteAsText = false;
+    document.addEventListener('keydown', e => { pasteAsText = !!((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key || '').toLowerCase() === 'v'); }, true);
+    const hasTextSel = () => { const s = window.getSelection && window.getSelection(); return !!(s && !s.isCollapsed && String(s).trim()); };
+    document.addEventListener('keydown', e => { if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return; const k = (e.key || '').toLowerCase(); if (k !== 'c' && k !== 'x') return;
+      const t = e.target; if (t && t.closest && t.closest('input,textarea,select')) return;
+      const noteOpen = !!(note2 && note2.classList.contains('show')); let el = null, locked = false;
+      if (noteOpen) { if (selImg && selImg.isConnected) { el = selImg; locked = isImgLocked(el); } }
+      else { if (t && t.isContentEditable) return; const NI = window.MM.nodeImg, s = NI && NI.selected; if (s) { el = document.querySelector('[data-node-img="1"][data-node-id="' + CSS.escape(String(s.nodeId)) + '"][data-iid="' + CSS.escape(String(s.imgId)) + '"]'); const d = el && NI.getImg(s.nodeId, s.imgId); locked = !!(d && d.locked); } }
+      if (!el || hasTextSel()) return; e.preventDefault(); e.stopPropagation();
+      if (k === 'x' && locked) { imgClipAction('copy', el); clipToast('العنصر مقفول: اتنسخ من غير قص'); return; }
+      imgClipAction(k === 'x' ? 'cut' : 'copy', el); }, true);
+    document.addEventListener('paste', e => { const cd = e.clipboardData; if (!cd || e.defaultPrevented) return;
+      const t = e.target; if (t && t.nodeType === 1 && t.closest && t.closest('input,textarea,select')) return;
+      const noteOpen = !!(note2 && note2Id && note2.classList.contains('show')); let opt = {};
+      if (noteOpen) { if (t && t.nodeType === 1 && t !== document.body && !note2.contains(t)) return; }
+      else { if (t && t.isContentEditable) return; const n = C.ui.sel.size === 1 ? C.get([...C.ui.sel][0]) : null; if (!n || n.type !== 'mindnode') return; opt = { node: n.id }; }
       const fs = [...(cd.files || [])].filter(f => /^image\//i.test(f.type)), its = !fs.length && cd.items ? [...cd.items].filter(i => i.kind === 'file' && /^image\//i.test(i.type)).map(i => i.getAsFile()).filter(Boolean) : [], f = fs[0] || its[0];
-      if (f) { e.preventDefault(); imgClipPaste({ file: f }); return; }
-      if (t && note2Edit.contains(t) && /<img[\s>]/i.test(cd.getData('text/html') || '')) { const id = note2Id; setTimeout(() => migrateLegacyImgs(id), 0); } });
+      if (f) { e.preventDefault(); imgClipPaste(Object.assign({ file: f }, opt)); return; }
+      if (imgClip && imgClip.eq && imgClipTxt && !pasteAsText && cd.getData('text/plain') === imgClipTxt) { e.preventDefault(); imgClipPaste(Object.assign({ internal: true }, opt)); return; }
+      if (noteOpen && t && note2Edit.contains(t) && /<img[\s>]/i.test(cd.getData('text/html') || '')) { const id = note2Id; setTimeout(() => migrateLegacyImgs(id), 0); } }, true); /* capture: لازم يشتغل قبل handler اللصق بتاع بلوك المعادلات (هو كمان capture)، وإلا بيحوّل نص المعادلة لصيغة ويمنعنا */
     function startMove(e) { if (!selImg || isImgLocked(selImg)) return; e.preventDefault(); e.stopPropagation();
       imgDrag = { mode: 'move', pid: e.pointerId, x0: e.clientX, y0: e.clientY, startLeft: parseFloat(selImg.style.left) || 0, startTop: parseFloat(selImg.style.top) || 0 }; }
     const IMG_MIN = 32, IMG_MAX = 8000, imgMin = el => isEqEl(el) ? 14 : IMG_MIN; /* المعادلة تقدر تصغر أكتر من الصورة (نصها صغير أصلاً) */ /* حد أدنى يخلّي الصورة قابلة للإمساك، وحد أقصى كبير بيناسب الـFreeform Workspace */
