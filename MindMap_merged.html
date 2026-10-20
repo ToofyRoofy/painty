@@ -3405,6 +3405,7 @@ function validateData(d) {
   return null;
 }
 const countNodes = d => d.objects.filter(o => o.type === 'mindnode').length;
+const htmlKey = id => 'html:' + id;   /* الـhtml المرفق بالمشروع بيتخزن في kv تحت المفتاح ده، وعلامته (htmlName) في meta */
 const newId = () => 'p_' + ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)));
 const Store = {
   listMeta() { return txp(['meta'], 'readonly', (t, set) => { const r = t.objectStore('meta').getAll(); r.onsuccess = () => set(r.result || []); }); },
@@ -3420,9 +3421,12 @@ const Store = {
   renameProject(id, name) { return txp(['meta'], 'readwrite', (t, set) => { const ms = t.objectStore('meta'), g = ms.get(id);
     g.onsuccess = () => { const m = g.result; if (!m) { set(false); return; } ms.put(Object.assign({}, m, { name })); set(true); }; }); },
   deleteProject(id) { return txp(['meta', 'data', 'kv'], 'readwrite', (t, set) => { t.objectStore('meta').delete(id); t.objectStore('data').delete(id);
-    const kv = t.objectStore('kv'), g = kv.get('lastProjectId'); g.onsuccess = () => { if (g.result && g.result.v === id) kv.delete('lastProjectId'); }; set(true); }); },
+    const kv = t.objectStore('kv'), g = kv.get('lastProjectId'); kv.delete(htmlKey(id)); g.onsuccess = () => { if (g.result && g.result.v === id) kv.delete('lastProjectId'); }; set(true); }); },
   kvGet(k) { return txp(['kv'], 'readonly', (t, set) => { const r = t.objectStore('kv').get(k); r.onsuccess = () => set(r.result ? r.result.v : undefined); }); },
-  kvSet(k, v) { return txp(['kv'], 'readwrite', (t, set) => { t.objectStore('kv').put({ k, v }); set(true); }); }
+  kvSet(k, v) { return txp(['kv'], 'readwrite', (t, set) => { t.objectStore('kv').put({ k, v }); set(true); }); },
+  setHtml(id, name, html) { return txp(['meta', 'kv'], 'readwrite', (t, set) => { const ms = t.objectStore('meta'), g = ms.get(id);
+    g.onsuccess = () => { const m = g.result; if (!m) { set(false); return; }
+      const now = Date.now(); t.objectStore('kv').put({ k: htmlKey(id), v: { name, html, savedAt: now } }); ms.put(Object.assign({}, m, { htmlName: name, htmlAt: now })); set(true); }; }); }
 };
 
 /* ---------- Migration من الـautosave القديم (مرة واحدة، من غير حذف للأصل) ---------- */
@@ -3480,6 +3484,13 @@ const css = el('style', { id: 'pjStyle' }, `
 .pjBtns .danger{background:#c62828;color:#fff;border-color:#c62828}
 .pjToast{position:fixed;z-index:5300;left:50%;transform:translateX(-50%);bottom:24px;background:#323232;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;max-width:90vw;direction:rtl}
 .pjToast.err{background:#c62828}
+.pjHtml{flex:0 0 auto;border:2px solid #5b87c5;background:rgba(91,135,197,.12);color:#3f6fae;border-radius:10px;padding:3px 10px;font:700 15px system-ui,sans-serif;direction:ltr;cursor:pointer;touch-action:manipulation}
+.pjHtml:hover{background:rgba(91,135,197,.24)}
+.pjHtmlView{position:fixed;inset:0;z-index:5150;display:flex;flex-direction:column;background:#fff}
+.pjHtmlBar{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:6px 12px;padding-top:calc(6px + env(safe-area-inset-top,0px));background:#1d2330;color:#fff;direction:rtl;font:600 14px system-ui,sans-serif}
+.pjHtmlBar button{border:0;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;padding:7px 14px;font:600 13px system-ui,sans-serif;cursor:pointer}
+.pjHtmlBar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pjHtmlView iframe{flex:1 1 auto;min-height:0;width:100%;border:0;background:#fff}
 `);
 document.head.appendChild(css);
 
@@ -3578,8 +3589,9 @@ function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } if (menuO
 function showMenu(meta, x, y) { closeMenu();
   const m = el('div', { className: 'pjMenu' }); m.dir = 'rtl';
   const rn = el('button', { type: 'button' }, 'Rename'), dl = el('button', { type: 'button', className: 'del' }, 'Delete');
-  rn.onclick = () => { closeMenu(); renameFlow(meta); }; dl.onclick = () => { closeMenu(); deleteFlow(meta); };
-  m.append(rn, dl); document.body.appendChild(m); m.style.zIndex = 5100;
+  const ph = el('button', { type: 'button' }, meta.htmlName ? 'change the html' : 'put an html');
+  rn.onclick = () => { closeMenu(); renameFlow(meta); }; ph.onclick = () => { closeMenu(); pickHtml(meta); }; dl.onclick = () => { closeMenu(); deleteFlow(meta); };
+  m.append(rn, ph, dl); document.body.appendChild(m); m.style.zIndex = 5100;
   const w = m.offsetWidth, h = m.offsetHeight; m.style.left = Math.max(4, Math.min(x, innerWidth - w - 4)) + 'px'; m.style.top = Math.max(4, Math.min(y, innerHeight - h - 4)) + 'px';
   menuEl = m; menuOff = e => { if (e.type === 'keydown') { if (e.key === 'Escape') closeMenu(); return; } if (!m.contains(e.target)) closeMenu(); };
   document.addEventListener('pointerdown', menuOff, true); document.addEventListener('keydown', menuOff, true); }
@@ -3591,9 +3603,30 @@ async function renameFlow(meta) {
   renderPicker();
 }
 async function deleteFlow(meta) {
-  const v = await dialog({ title: 'هل تريد حذف المشروع؟', message: '«' + meta.name + '» — لا يمكن التراجع عن الحذف.', okText: 'حذف', danger: true }); if (v === null) return;
+  const v = await dialog({ title: 'هل تريد حذف المشروع؟', message: '«' + meta.name + '» — لا يمكن التراجع عن الحذف.' + (meta.htmlName ? ' ويُحذف معه الـ html المرفق («' + meta.htmlName + '»).' : ''), okText: 'حذف', danger: true }); if (v === null) return;
   try { await Store.deleteProject(meta.id); } catch (e) { toast('تعذر حذف المشروع: ' + e.message, true); }
   renderPicker();
+}
+
+/* ---------- html مرفق بالمشروع: اختيار الملف → تخزين دائم في IndexedDB → فتحه جوه التطبيق ---------- */
+const htmlInput = el('input', { type: 'file', accept: '.html,.htm,text/html' }); htmlInput.style.display = 'none'; picker.appendChild(htmlInput);
+let htmlTarget = null;
+function pickHtml(meta) { htmlTarget = meta; htmlInput.click(); }
+htmlInput.addEventListener('change', async () => {
+  const f = htmlInput.files && htmlInput.files[0], meta = htmlTarget; htmlTarget = null; htmlInput.value = ''; if (!f || !meta) return;
+  let html; try { html = await f.text(); } catch (e) { toast('تعذر قراءة الملف: ' + errText(e), true); return; }
+  if (!html.trim()) { toast('الملف فارغ', true); return; }
+  if (meta.htmlName && (await dialog({ title: 'استبدال الـ html؟', message: '«' + meta.htmlName + '» ← «' + f.name + '»', okText: 'استبدال' })) === null) return;
+  try { if (!(await Store.setHtml(meta.id, f.name, html))) throw new Error('المشروع غير موجود'); toast('تم حفظ الـ html في «' + meta.name + '»'); } catch (e) { toast('تعذر حفظ الـ html: ' + errText(e), true); }
+  renderPicker();
+});
+async function openHtml(meta) {
+  let rec; try { rec = await Store.kvGet(htmlKey(meta.id)); } catch (e) { toast('تعذر قراءة الـ html: ' + errText(e), true); return; }
+  if (!rec || !rec.html) { toast('الـ html المرفق غير موجود', true); return; }
+  const view = el('div', { className: 'pjHtmlView' }), bar = el('div', { className: 'pjHtmlBar' }), fr = el('iframe', { title: meta.htmlName || meta.name }), back = el('button', { type: 'button' }, '← المشاريع');
+  back.onclick = () => { try { fr.contentWindow.speechSynthesis.cancel(); } catch (e) {} view.remove(); };
+  view.addEventListener('keydown', e => e.stopPropagation());
+  bar.append(back, el('span', null, meta.name)); view.append(bar, fr); fr.srcdoc = rec.html; document.body.appendChild(view);
 }
 
 let suppressClick = false;
@@ -3601,8 +3634,10 @@ function makeRow(m, isLast) {
   const row = el('div', { className: 'pjRow' + (isLast ? ' last' : ''), tabIndex: 0 }); row.dataset.id = m.id;
   const info = el('div', { className: 'pjInfo' }); info.appendChild(el('div', { className: 'pjName' }, m.name));
   info.appendChild(el('div', { className: 'pjSub' }, 'آخر تعديل: ' + ago(m.updatedAt) + ' · ' + (m.nodeCount || 0) + ' عقدة' + (isLast ? ' · آخر مشروع' : '')));
-  const more = el('button', { className: 'pjMore', type: 'button', title: 'Rename / Delete', ariaLabel: 'خيارات' }, '⋯');
-  row.append(info, more);
+  const more = el('button', { className: 'pjMore', type: 'button', title: 'Rename / html / Delete', ariaLabel: 'خيارات' }, '⋯');
+  row.append(info);
+  if (m.htmlName) { const hb = el('button', { className: 'pjHtml', type: 'button', title: m.htmlName, ariaLabel: 'فتح الـ html' }, 'html'); hb.addEventListener('click', e => { e.stopPropagation(); openHtml(m); }); row.append(hb); }
+  row.append(more);
   row.addEventListener('click', () => { if (suppressClick) { suppressClick = false; return; } openProject(m.id); });
   row.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === row) openProject(m.id); });
   more.addEventListener('click', e => { e.stopPropagation(); const r = more.getBoundingClientRect(); showMenu(m, r.left, r.bottom + 2); });
@@ -4746,7 +4781,7 @@ window.MMProjects = { openProject, goPicker, newProject, flush, Store, saveCopy 
       try { var o = JSON.parse(await inp.files[0].text()); if (!o || !Array.isArray(o.meta) || !Array.isArray(o.data)) return alert('الملف ده مش نسخة احتياطية صالحة.');
         if (!confirm('هيتم استرجاع ' + o.meta.length + ' مشروع (المشروع بنفس الرقم بيتستبدل بنسخة الملف). تكمل؟')) return;
         var db = await new Promise(function (ok, no) { var q = indexedDB.open('mm_projects', 1); q.onupgradeneeded = function () { var d = q.result; ['meta', 'data'].forEach(function (n) { if (!d.objectStoreNames.contains(n)) d.createObjectStore(n, { keyPath: 'id' }); }); if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv', { keyPath: 'k' }); }; q.onsuccess = function () { ok(q.result); }; q.onerror = function () { no(q.error); }; });
-        await new Promise(function (ok, no) { var t = db.transaction(['meta', 'data'], 'readwrite'); o.meta.forEach(function (x) { t.objectStore('meta').put(x); }); o.data.forEach(function (x) { t.objectStore('data').put(x); }); t.oncomplete = ok; t.onerror = function () { no(t.error); }; });
+        await new Promise(function (ok, no) { var t = db.transaction(['meta', 'data', 'kv'], 'readwrite'); o.meta.forEach(function (x) { t.objectStore('meta').put(x); }); o.data.forEach(function (x) { t.objectStore('data').put(x); }); (o.kv || []).forEach(function (x) { if (x && /^html:/.test(x.k)) t.objectStore('kv').put(x); }); t.oncomplete = ok; t.onerror = function () { no(t.error); }; });
         db.close(); alert('✅ اتسترجع ' + o.meta.length + ' مشروع. هيتعمل تحميل للصفحة.'); location.replace(location.pathname);
       } catch (e) { alert('فشل الاسترجاع: ' + e.message); } };
     inp.click();
