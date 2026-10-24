@@ -19,6 +19,8 @@ window.addEventListener('unhandledrejection', function (e) { try { window.__mmEr
 <title>Mind Map</title>
 <style>
 html,body{height:100%;margin:0;font-family:Tahoma,"Segoe UI",Arial,sans-serif;background:#f5f6f8}
+/* الأس/الأسفل دايمًا على يمين الأساس حتى جوه نص عربي RTL (10⁻¹⁰) */
+sup,sub{unicode-bidi:bidi-override;direction:ltr}
 </style>
 </head>
 <body>
@@ -183,10 +185,10 @@ const K = { tags: () => Core.byType('tag'),
  link: (o, l) => set(o, { 'data.links': (store.get(o).data.links || []).concat([l]) }, 'connect'),
  unlink: (o, i) => set(o, { 'data.links': (store.get(o).data.links || []).filter((_, j) => j !== i) }, 'disconnect'),
  attach: (o, m) => set(o, { 'data.attachments': (store.get(o).data.attachments || []).concat([Object.assign({ id: uid('att') }, m)]) }, 'edit'),
- search(q, f) { f = f || {}; q = String(q || '').toLowerCase().trim(); const tn = i => { const t = store.get(i); return t ? t.data.name : ''; };
+ search(q, f) { f = f || {}; q = String(q || '').replace(/\u200E/g, '').toLowerCase().trim(); const tn = i => { const t = store.get(i); return t ? t.data.name : ''; };
   return list().filter(o => { if (o.type === 'tag' || o.type === 'mindlink' || o.type === 'group') return false; const d = o.data, T = d.task;
    if (f.tag && !(d.tags || []).includes(f.tag)) return false; if (f.task && !(T && (f.task === 'done') === !!T.done)) return false; if (!q) return true;
-   return [d.title, d.notes, (d.tags || []).map(tn).join(' '), T ? 'task ' + (T.due || '') + ' ' + (T.prio || '') : '', (d.links || []).map(l => l.url || l.ref).join(' '), (d.attachments || []).map(a => a.name).join(' ')].join('\n').toLowerCase().includes(q); }); } };
+   return [d.title, d.notes, (d.tags || []).map(tn).join(' '), T ? 'task ' + (T.due || '') + ' ' + (T.prio || '') : '', (d.links || []).map(l => l.url || l.ref).join(' '), (d.attachments || []).map(a => a.name).join(' ')].join('\n').replace(/\u200E/g, '').toLowerCase().includes(q); }); } };
 
 const Core = window.EKTSCore = { SCHEMA: 1, TYPES, ui, types, uid, registerType, get rev() { return rev; }, lastError: null, k: K,
  get: id => store.get(id) || null, list, byType: t => list().filter(o => o.type === t), kids, leaves, top,
@@ -224,8 +226,71 @@ window.undo = undoAll; window.redo = redoAll;
     }[c]));
   };
 
+  /* ===== MMBidi — الأس/الأسفل يفضل على يمين الأساس (10⁻¹⁰) حتى جوه نص عربي RTL =====
+     السبب: الرقم بعد حرف عربي بيتحول AN، وعلامات ⁺ ⁻ ⁼ ⁽ ⁾ ₊ ₋ (ES/ON) بتقطع الرقم وبتنقلب شمال (¹⁰⁻10).
+     الحل: LRM (U+200E) غير مرئي قبل أول حرف في مجموعة الأس/الأسفل لو فيها علامة — وبس لو فيه حرف RTL قبلها في نفس السطر
+     (لو مفيش، الترتيب أصلًا سليم، وLRM هنا كان هيقلب اتجاه الفقرة). عناصر <sup>/<sub> بتتظبط بـCSS (bidi-override). */
+  window.MMBidi = (function () {
+    const LRM = '‎', RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/, RUN = /[+\-−]?‎?[⁰-₟²³¹]+/g, SIGN = /[+\-−⁺-⁾₊-₎]/, QUICK = /[⁰-₟²³¹]/;
+    const BLK = /^(DIV|P|LI|H[1-6]|TD|TH|TR|TABLE|THEAD|TBODY|TFOOT|UL|OL|BLOCKQUOTE|PRE)$/, BLKSEL = 'div,p,li,h1,h2,h3,h4,h5,h6,td,th,blockquote,pre';
+    function scan(s, rtl) {   /* → { t: النص بعد الإصلاح, rtl: لسه فيه حرف RTL في السطر الحالي؟ } */
+      const parts = s.split('\n'), out = [];
+      for (let k = 0; k < parts.length; k++) {
+        if (k > 0) rtl = false;
+        const p = parts[k]; let r = '', pos = 0, from = 0, seen = rtl, m; RUN.lastIndex = 0;
+        while ((m = RUN.exec(p))) {
+          const i = m.index;
+          if (!seen && RTL.test(p.slice(from, i))) seen = true;
+          from = i + m[0].length;
+          if (seen && SIGN.test(m[0]) && m[0].charAt(0) !== LRM && p.charAt(i - 1) !== LRM) { r += p.slice(pos, i) + LRM; pos = i; }
+        }
+        r += p.slice(pos); if (!seen && RTL.test(p.slice(from))) seen = true;
+        out.push(r); rtl = seen;
+      }
+      return { t: out.join('\n'), rtl };
+    }
+    const fixText = (s, rtl) => (!s || typeof s !== 'string' || !QUICK.test(s)) ? s : scan(s, !!rtl).t;
+    function walkTexts(root, visit) {   /* visit(textNode, rtlBefore) → rtlAfter، أو null لإيقاف المشي */
+      let rtl = false, stop = false;
+      (function walk(n) {
+        for (let c = n.firstChild; c && !stop; c = c.nextSibling) {
+          if (c.nodeType === 3) { const r = visit(c, rtl); if (r === null) { stop = true; return; } rtl = r; }
+          else if (c.nodeType === 1) {
+            const tg = c.tagName;
+            if (tg === 'BR') { rtl = false; continue; }
+            if (tg === 'SCRIPT' || tg === 'STYLE' || c.hasAttribute('data-mmeq') || (c.classList && c.classList.contains('mq'))) continue;
+            const blk = BLK.test(tg); if (blk) rtl = false; walk(c); if (blk) rtl = false;
+          }
+        }
+      })(root);
+    }
+    function fixDom(root) {
+      if (!root || !root.firstChild) return root;
+      walkTexts(root, (c, rtl) => { if (QUICK.test(c.data)) { const r = scan(c.data, rtl); if (r.t !== c.data) c.data = r.t; return r.rtl; } return rtl || RTL.test(c.data); });
+      return root;
+    }
+    function firstFix(root) {   /* أول مكان ناقص فيه LRM → { node, off } (من غير تعديل) */
+      let hit = null;
+      walkTexts(root, (c, rtl) => { const d = c.data; if (QUICK.test(d)) { const r = scan(d, rtl); if (r.t !== d) { let p = 0; while (p < d.length && d[p] === r.t[p]) p++; hit = { node: c, off: p }; return null; } return r.rtl; } return rtl || RTL.test(d); });
+      return hit;
+    }
+    const needs = s => QUICK.test(s || '');
+    function fixHtml(h) {
+      if (!h || typeof h !== 'string' || !QUICK.test(h)) return h;
+      const t = document.createElement('template'); t.innerHTML = h; fixDom(t.content); return t.innerHTML;
+    }
+    function lineBefore(node, off) {   /* نص السطر الحالي قبل نقطة (node, off) */
+      const el = node.nodeType === 1 ? node : node.parentElement; if (!el) return '';
+      const b = (el.closest && el.closest(BLKSEL)) || el, r = document.createRange(); r.setStart(b, 0); r.setEnd(node, off);
+      let s = ''; (function w(n) { for (let c = n.firstChild; c; c = c.nextSibling) { if (c.nodeType === 3) s += c.data; else if (c.nodeType === 1) { if (c.tagName === 'BR') s += '\n'; else if (!c.hasAttribute('data-mmeq')) w(c); } } })(r.cloneContents());
+      return s.slice(s.lastIndexOf('\n') + 1);
+    }
+    const ctx = (node, off) => { try { return RTL.test(lineBefore(node, off)); } catch (e) { return false; } };
+    return { LRM, fixText, fixHtml, fixDom, firstFix, needs, ctx, clean: s => String(s == null ? '' : s).replace(/‎/g, '') };
+  })();
+
   // نص عادي من HTML (المعادلات بترجع نصها الأصلي) — كان مكرر بحروفه في engine/metadata/panels
-  window.MM.strip = function (h) { const d = document.createElement('div'); d.innerHTML = h || ''; d.querySelectorAll('[data-mmeq]').forEach(q => q.replaceWith(document.createTextNode(q.getAttribute('data-mmeq') || ''))); return (d.innerText || d.textContent || '').trim(); };
+  window.MM.strip = function (h) { const d = document.createElement('div'); d.innerHTML = h || ''; d.querySelectorAll('[data-mmeq]').forEach(q => q.replaceWith(document.createTextNode(q.getAttribute('data-mmeq') || ''))); return window.MMBidi.fixText((d.innerText || d.textContent || '').trim(), false); };
 
   // قراءة ملف كـ Data URL — كان مكرر بحروفه في engine/metadata
   window.MM.readFile = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
@@ -692,7 +757,7 @@ window.undo = undoAll; window.redo = redoAll;
     const setDoc = (p, kind) => { const d = getDoc(); C.set(d.id, Object.fromEntries(Object.entries(p).map(([k, v]) => [k.startsWith('data.') ? k : 'data.' + k, v])), kind || 'settings'); };
     const hidden = n => { let p = C.get(n.parent), i = 0; while (p && i++ < 200) { if (p.data.collapsed) return true; p = C.get(p.parent); } return false; };
     const nodePlain = n => strip(n.data.richHtml) || String(n.data.title || '');
-    const richHtml = n => n.data.richHtml && String(n.data.richHtml).trim() ? n.data.richHtml : esc(n.data.title || '').replace(/\n/g, '<br>');
+    const richHtml = n => window.MMBidi.fixHtml(n.data.richHtml && String(n.data.richHtml).trim() ? n.data.richHtml : esc(n.data.title || '').replace(/\n/g, '<br>'));
 
     /* ---------- Group: Node auto-height (fit box to wrapped multi-line text) ----------
        المقاس بيتحسب بنفس الـbox model المستخدم فعليًا في refreshNodeDom()
@@ -1212,7 +1277,7 @@ window.undo = undoAll; window.redo = redoAll;
     function safeNodeHtml(h) { const t = document.createElement('template'); t.innerHTML = h || ''; const allow = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, BR: 1, DIV: 1, P: 1, UL: 1, OL: 1, LI: 1, H1: 1, H2: 1, H3: 1, SPAN: 1, SUP: 1, SUB: 1 };
       const w = n => [...n.childNodes].forEach(c => { if (c.nodeType === 3) return; if (c.nodeType !== 1) { c.remove(); return; } if (c.tagName === 'SPAN' && c.hasAttribute('data-mmeq') && window.MMEq && window.MMEq.fill(c, c.getAttribute('data-mmeq'))) return; if (!allow[c.tagName]) { w(c); while (c.firstChild) n.insertBefore(c.firstChild, c); c.remove(); return; }
         [...c.attributes].forEach(a => { if (a.name === 'style') { const q = a.value.split(';').filter(x => /^\s*(color|font-family|font-size|font-weight|font-style|text-decoration|text-align|direction)\s*:/i.test(x) && !/url\s*\(|javascript|expression/i.test(x)).join(';'); q ? c.setAttribute('style', q) : c.removeAttribute('style'); } else if (a.name === 'dir' && !/^(rtl|ltr|auto)$/i.test(a.value)) c.removeAttribute(a.name); else if (a.name !== 'dir' && a.name !== 'style') c.removeAttribute(a.name); }); w(c); });
-      w(t.content); return t.innerHTML; }
+      w(t.content); window.MMBidi.fixDom(t.content); return t.innerHTML; }
     let nodeFormat = document.getElementById('mmNodeFormat2');
     function showNodeFormat(e, n) { if (!nodeFormat) { nodeFormat = $('div', { id: 'mmNodeFormat2' }); nodeFormat.innerHTML = '<button data-f="bold"><b>B</b></button><button data-f="italic"><i>I</i></button><button data-f="underline"><u>U</u></button><button data-f="insertUnorderedList">•</button><button data-f="insertOrderedList">1.</button><button id="mmNFeq" title="تنسيق المحدد كمعادلة (Alt+Shift+E)" aria-label="Format selection as equation">a⁄b</button><select id="mmNFfont"><option>Arial</option><option>Tahoma</option><option>Georgia</option><option>monospace</option></select><select id="mmNFsize"><option>12</option><option>14</option><option>16</option><option>18</option><option>22</option><option>28</option></select><input id="mmNFcolor" type="color" value="#ffffff"><button id="mmNFleft">⇤</button><button id="mmNFcenter">≡</button><button id="mmNFright">⇥</button><button id="mmNFdir">RTL/LTR</button><button id="mmNFdone">✓</button>'; nodeFormat.style.cssText = 'position:absolute;z-index:8;display:flex;gap:3px;align-items:center;background:#fff;border:1px solid #bbb;border-radius:8px;padding:4px;box-shadow:0 3px 14px #0003;direction:ltr;overflow:auto;max-width:95%'; body.appendChild(nodeFormat);
         nodeFormat.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { if (editingNode) document.execCommand(b.dataset.f, false, null); });
@@ -1364,14 +1429,14 @@ window.undo = undoAll; window.redo = redoAll;
       '.n .n.last::before{bottom:auto;height:var(--elbow)}' +
       '.n .n::after{content:"";position:absolute;inset-inline-start:0;top:var(--elbow);width:var(--arm);border-top:1px solid var(--line)}' +
       '.row{padding-block:.15em}' +
-      '.label{unicode-bidi:plaintext;overflow-wrap:anywhere;font-weight:400}h1.label{margin:0;font-size:inherit}.label[dir=rtl],.label[dir=ltr]{unicode-bidi:isolate}.label .mq{margin-block:.35em}.root>.row>.label{font-weight:700}' +
+      'sup,sub{unicode-bidi:bidi-override;direction:ltr}.label{unicode-bidi:plaintext;overflow-wrap:anywhere;font-weight:400}h1.label{margin:0;font-size:inherit}.label[dir=rtl],.label[dir=ltr]{unicode-bidi:isolate}.label .mq{margin-block:.35em}.root>.row>.label{font-weight:700}' +
       '.mks{display:inline;direction:ltr;unicode-bidi:isolate;white-space:nowrap;font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;font-weight:400;font-style:normal}.mk+.mk{margin-inline-start:.15em}' +
       '.imgs img{display:block;max-width:100%;height:auto;margin-block:.45em .3em}.top{display:flex;flex-wrap:wrap;align-items:flex-start;gap:.3em .8em}.top .imgs{display:flex;flex-wrap:wrap;gap:.4em;max-width:60%}.top .imgs img{margin:.2em 0}.top>.label{flex:0 1 auto;min-width:0}' +
       '.rels{margin-block:.1em;font-size:.88em;line-height:1.6;color:var(--rel)}.rel{display:block;overflow-wrap:anywhere}.rd{display:inline-block;min-width:1.3em;text-align:center;font-weight:700}.rel a{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}.rl{opacity:.85}.rs{display:inline-block;min-width:1.5em;margin-inline-end:.35em;padding:0 .4em;border:1.5px solid currentColor;border-radius:1em;font-size:.85em;font-weight:700;text-align:center;line-height:1.35}.n{scroll-margin-top:12px}.n:target>.row{background:#fff8dc}.n>.lk{position:absolute;z-index:1;top:0;direction:inherit;min-width:1.7em;padding:0 .45em;border:1.5px solid #1a73e8;border-radius:1em;background:#fff;color:#1a73e8;font-size:.8em;font-weight:700;line-height:1.5;text-align:center;white-space:nowrap}html[dir=rtl] .n>.lk{right:0;left:auto;transform:translate(50%,-50%)}html[dir=ltr] .n>.lk{left:0;right:auto;transform:translate(-50%,-50%)}' +
       '.note{margin-block:.1em .2em;padding-block:.15em;padding-inline:.7em 0;border-inline-start:2px solid var(--noteline);font-size:.92em;line-height:1.65;color:var(--muted);overflow-wrap:anywhere}' +
       '.note .nt+.nt,.note .nimgs{margin-top:.4em}' +
       '.note *{position:static!important;float:none!important;max-width:100%!important}' +
-      '.note img{height:auto!important;margin:0!important;vertical-align:middle}.nimgs img{display:block;margin-block:.3em!important}.nimeq{margin-block:.3em}' +
+      '.note img{height:auto!important;margin:0!important;vertical-align:middle}.nimgs img,.nimg img{display:block;margin-block:.3em!important}.nimeq{margin-block:.3em}' +
       '.note table{border-collapse:collapse}.note td,.note th{border:1px solid var(--line);padding:.15em .45em}' +
       '.note ul,.note ol{margin:.2em 0;padding-inline-start:1.4em}.note a{color:#2b6cb0;text-decoration:underline}' +
       '.empty{color:#5f6b7a;text-align:center}' +
@@ -1397,56 +1462,99 @@ window.undo = undoAll; window.redo = redoAll;
       const d = n.data || {}; let s = '';
       if (d.richHtml && String(d.richHtml).trim()) { const t = document.createElement('template'), BL = /^(DIV|P|LI|H1|H2|H3)$/; t.innerHTML = d.richHtml; const w = x => [...x.childNodes].forEach(c => { if (c.nodeType === 3) s += c.nodeValue; else if (c.nodeType === 1) { if (/^(SCRIPT|STYLE)$/.test(c.tagName)) return; if (c.hasAttribute('data-mmeq')) { const q = c.getAttribute('data-mmeq') || ''; if (stash) { stash.push(q); s += '\uE000' + (stash.length - 1) + '\uE001'; } else s += q; return; } if (c.tagName === 'BR') s += '\n'; else if (BL.test(c.tagName)) { if (s && !/\n$/.test(s)) s += '\n'; w(c); if (!/\n$/.test(s)) s += '\n'; } else w(c); } }); w(t.content); }
       if (!s.trim()) s = String(d.title || '');
-      return s.replace(/\r/g, '').replace(/^\n+|\n+$/g, '');
+      return window.MMBidi.fixText(s.replace(/\r/g, '').replace(/^\n+|\n+$/g, ''), false);
     }
-    /* الملاحظة مش Node: بتتحط جوه نفس الـ.row. المحتوى = notesHtml (أو notes) + noteBoxes + noteImgs (بترتيب y ثم x جوه الملاحظة بس) */
-    /* المعادلات الحرة (noteImgs فيها eq) بتتحط جوه تدفق النص عند مكانها الفعلي (y) بدل ما تتجمع تحت.
-       الطريقة: نسخة مخفية من #mmN2edit (نفس العرض/الـpadding/الخط/الـline-height) بنقيس فيها مكان كل سطر، وبعدين كل معادلة بتتحط قبل أول سطر مركزه تحت مركزها.
-       الأسطر الفاضية (DIV/P فاضي) اللي المعادلة كانت قاعدة فوقها في الـeditor بتتشال، لأنها كانت متغطية بالمعادلة أصلًا.
-       مفيش أي تعديل في الـdata — ده تركيب export مؤقت بس. لو القياس فشل لأي سبب، الباقي بيرجع تحت زي الأول. */
-    function exportNoteWithEqs(safeHtml, eqs) {
-      const out = { html: safeHtml, rest: eqs.slice() };
-      if (!eqs.length || !safeHtml) return out;
-      const host = document.createElement('div');
+    /* الملاحظة مش Node: بتتحط جوه نفس الـ.row. المحتوى = notesHtml (أو notes) + noteBoxes + noteImgs */
+    /* ===== الصور والمعادلات الحرة (data.noteImgs) في الـHTML Export =====
+       في الـeditor الصورة/المعادلة طبقة حرة (x/y) فوق النص؛ الـExport مفيهوش إحداثيات، فكل عنصر بيتحط في تدفق النص عند السطر اللي كان جنبه.
+       الطريقة: نسخة مخفية من #mmN2edit (نفس العرض/الـpadding/الخط/الـline-height) بنقيس فيها كل سطر «بصري» فعلًا:
+       أسطر الـ<br>، أسطر الالتفاف جوه الفقرة الواحدة، الأسطر جوه الـdiv/span المتداخلة، وأسطر الـli (الجدول والصورة والمعادلة المضمّنة = وحدة واحدة).
+       بعدين كل عنصر (مركزه رأسيًا هو المرجع):
+         • جنب سطر نص             ← بعد السطر ده مباشرةً (السطر اللي مركزه أقرب لمركز العنصر)
+         • فوق أسطر فاضية كانت حاجزة له (Gap) ← مكان أول سطر فاضي، والأسطر الفاضية اللي كان مغطيها بتتشال
+         • في فراغ بين أسطر        ← قبل أول سطر مركزه تحت مركز العنصر
+         • تحت آخر النص            ← في آخر الملاحظة
+       مفيش أي تعديل في الـdata — تركيب export مؤقت بس. لو القياس فشل لأي سبب، العناصر بترجع تحت زي الأول. */
+    let exportSbw = null;
+    const exportScrollbarW = () => { if (exportSbw == null) { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:-9999px;top:0;width:100px;height:100px;overflow:scroll;visibility:hidden'; document.body.appendChild(d); exportSbw = Math.max(0, d.offsetWidth - d.clientWidth); d.remove(); } return exportSbw; };
+    const exportItemHtml = it => { if (it.eq) return exportEqHtml(it); const h = exportImgHtml(it); return h ? '<div class="nimg">' + h + '</div>' : ''; };
+    function exportNoteWithLayer(safeHtml, items) {
+      const out = { html: safeHtml, rest: items.slice() };
+      if (!items.length || !safeHtml) return out;
+      const ok = items.filter(it => it && exportItemHtml(it));   /* صورة src بتاعها مرفوض = بتتشال زي الأول */
+      if (!ok.length) return { html: safeHtml, rest: [] };
+      const wrap = document.createElement('div'), host = document.createElement('div');
       try {
-        const wrap = document.getElementById('mmN2wrap'), W = wrap && wrap.clientWidth > 200 ? wrap.clientWidth : Math.max(320, Math.min(860, window.innerWidth * 0.94) - 17);
-        host.style.cssText = 'position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none;overflow:hidden;box-sizing:border-box;padding:14px 16px;font-size:14px;line-height:1.6;direction:rtl;width:' + W + 'px';
-        host.innerHTML = safeHtml; document.body.appendChild(host);
-        const top0 = host.getBoundingClientRect().top, rg = document.createRange(), isBlk = /^(DIV|P|H1|H2|H3|UL|OL|TABLE)$/;
-        const kids = [];
-        [...host.childNodes].forEach(c => {
-          let r, empty = false;
-          if (c.nodeType === 3) { if (!c.nodeValue.trim()) return; rg.selectNodeContents(c); r = rg.getBoundingClientRect(); }
-          else if (c.nodeType === 1) { r = c.getBoundingClientRect(); empty = isBlk.test(c.tagName) && !c.textContent.trim() && !c.querySelector('img,table,[data-mmeq],.mq'); }
-          else return;
-          kids.push({ node: c, top: r.top - top0, bot: r.bottom - top0, empty });
+        const live = document.getElementById('mmN2wrap'), liveOk = !!(live && live.clientWidth > 200);
+        let W = liveOk ? live.clientWidth : Math.max(320, Math.min(860, window.innerWidth * 0.94) - 2);   /* عرض كارت الملاحظة (بدون حدّه) */
+        wrap.style.cssText = 'position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none';
+        wrap.innerHTML = '<style>.mmExpHost *{position:static!important;float:none!important;max-width:100%!important}.mmExpHost table{border-collapse:collapse;margin:6px 0}.mmExpHost td,.mmExpHost th{border:1px solid #000;padding:4px 6px;min-width:24px;height:1.9em;vertical-align:top;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}</style>';
+        host.className = 'mmExpHost'; host.style.cssText = 'box-sizing:border-box;padding:14px 16px;font-size:14px;line-height:1.6;direction:rtl;overflow:hidden;width:' + W + 'px';
+        host.innerHTML = safeHtml; wrap.appendChild(host); document.body.appendChild(wrap);
+        if (!liveOk && host.offsetHeight > Math.min(0.72 * window.innerHeight, 0.9 * window.innerHeight - 130)) { W -= exportScrollbarW(); host.style.width = W + 'px'; }   /* النص الطويل = الـscrollbar بياخد من العرض */
+        const top0 = host.getBoundingClientRect().top, rg = document.createRange(), leaves = [], vis = rs => [...rs].filter(r => r.height > 0.5), TOL = 7;
+        const textLeaves = c => {
+          const s = c.data; if (!s) return; rg.selectNodeContents(c);
+          const rs = vis(rg.getClientRects()); if (!rs.length) return;
+          const tops = []; rs.forEach(r => { if (!tops.some(t => Math.abs(t - r.top) < TOL)) tops.push(r.top); }); tops.sort((a, b) => a - b);
+          const band = k => { let t = 1e9, b = -1e9; rs.forEach(r => { if (Math.abs(r.top - tops[k]) < TOL) { t = Math.min(t, r.top); b = Math.max(b, r.bottom); } }); return [t - top0, b - top0]; };
+          const topAt = i => { rg.setStart(c, i); rg.setEnd(c, i + 1); const q = vis(rg.getClientRects()); return q.length ? q[0].top : null; };
+          const starts = [0];
+          for (let k = 1; k < tops.length; k++) {   /* أول حرف في كل سطر التفاف (بحث ثنائي) */
+            let lo = starts[k - 1] + 1, hi = s.length;
+            while (lo < hi) { const m = (lo + hi) >> 1; let q = m, t = null; while (q < s.length && (t = topAt(q)) === null) q++; if (t !== null && t >= tops[k] - TOL) hi = m; else lo = m + 1; }
+            starts.push(Math.min(lo, s.length - 1));
+          }
+          starts.forEach((a, k) => { const b = k + 1 < starts.length ? starts[k + 1] : s.length, bd = band(k); leaves.push({ k: 't', node: c, a, b, whole: a === 0 && b === s.length, top: bd[0], bot: bd[1], text: s.slice(a, b) }); });
+        };
+        const atom = c => /^(IMG|TABLE)$/.test(c.tagName) || c.hasAttribute('data-mmeq') || c.classList.contains('mq');
+        (function walk(n) {
+          for (let c = n.firstChild; c; c = c.nextSibling) {
+            if (c.nodeType === 3) textLeaves(c);
+            else if (c.nodeType === 1) {
+              if (/^(SCRIPT|STYLE)$/.test(c.tagName)) continue;
+              if (c.tagName === 'BR' || atom(c)) { const q = vis(c.getClientRects()); if (q.length) leaves.push({ k: c.tagName === 'BR' ? 'br' : 'o', node: c, top: q[0].top - top0, bot: q[0].bottom - top0 }); }
+              else walk(c);
+            }
+          }
+        })(host);
+        const lines = [];   /* كل سطر بصري = leaves اللي متداخلة رأسيًا (الـ<br> اللي بينهي سطر بيدخل في سطره، والـ<br> اللي لوحده = سطر فاضي) */
+        leaves.forEach(lf => { const L = lines[lines.length - 1], h = lf.bot - lf.top;
+          if (L && Math.min(L.bot, lf.bot) - Math.max(L.top, lf.top) > 0.4 * Math.min(L.bot - L.top, h)) { L.leaves.push(lf); L.top = Math.min(L.top, lf.top); L.bot = Math.max(L.bot, lf.bot); } else lines.push({ top: lf.top, bot: lf.bot, leaves: [lf] }); });
+        if (!lines.length) return out;
+        lines.forEach(L => { L.c = (L.top + L.bot) / 2; L.first = L.leaves[0]; L.blank = L.leaves.every(lf => lf.k === 'br' || (lf.k === 't' && !/[^\s\u00a0\u200e\u200f]/.test(lf.text))); });
+        const plan = [], drop = new Set();
+        ok.forEach(it => {
+          const y0 = +it.y || 0, h = Math.max(1, +it.h || 1), y1 = y0 + h, mid = y0 + h / 2;
+          const cov = []; lines.forEach((L, li) => { if (L.c >= y0 && L.c <= y1) cov.push({ L, li }); });
+          const tcov = cov.filter(o => !o.L.blank), bcov = cov.filter(o => o.L.blank);
+          let at;   /* الفهرس اللي العنصر بيتحط قبله (lines.length = آخر الملاحظة) */
+          if (tcov.length) at = tcov.reduce((p, o) => Math.abs(o.L.c - mid) < Math.abs(p.L.c - mid) ? o : p).li + 1;
+          else if (bcov.length) at = bcov[0].li;
+          else { const nx = lines.findIndex(L => L.c >= mid); at = nx < 0 ? lines.length : nx; }
+          bcov.forEach(o => drop.add(o.li)); plan.push({ it, at });
         });
-        if (!kids.length) return out;
-        const gone = new Set(), plan = [], placed = [];
-        eqs.forEach((it, i) => {
-          const y = +it.y || 0, h = Math.max(1, +it.h || 1), mid = y + h / 2, bot = y + h;
-          kids.forEach(k => { if (k.empty) { const ov = Math.min(k.bot, bot) - Math.max(k.top, y), kh = Math.max(1, k.bot - k.top); if (ov >= kh * 0.5) gone.add(k.node); } });
-          const nxt = kids.find(k => !gone.has(k.node) && (k.top + k.bot) / 2 >= mid);
-          plan.push({ i, before: nxt ? nxt.node : null }); placed.push(it);
+        const byAt = new Map(); plan.forEach((p, n) => { if (!byAt.has(p.at)) byAt.set(p.at, []); byAt.get(p.at).push(n); });
+        [...byAt.keys()].sort((a, b) => b - a).forEach(li => {   /* من آخر الملاحظة لأولها عشان تقسيم النص ما يبوّظش الـoffsets اللي قبله */
+          let ref = null, parent = host;
+          if (li < lines.length) { const lf = lines[li].first; ref = lf.k === 't' && lf.a > 0 ? lf.node.splitText(lf.a) : lf.node; parent = ref.parentNode; }
+          byAt.get(li).forEach(n => { const m = document.createElement('div'); m.setAttribute('data-mmslot', n); parent.insertBefore(m, ref); });
         });
-        const slot = i => { const m = document.createElement('div'); m.setAttribute('data-mmeqslot', i); return m; };
-        plan.forEach(p => { const m = slot(p.i); if (p.before) host.insertBefore(m, p.before); else host.appendChild(m); });
-        gone.forEach(g => { if (g.parentNode === host) g.remove(); });
-        out.html = host.innerHTML.replace(/<div data-mmeqslot="(\d+)"><\/div>/g, (m, i) => exportEqHtml(eqs[+i]));
+        drop.forEach(li => lines[li].leaves.forEach(lf => { if (lf.k === 'br' || (lf.k === 't' && lf.whole)) lf.node.remove(); }));
+        out.html = host.innerHTML.replace(/<div data-mmslot="(\d+)"><\/div>/g, (m, n) => exportItemHtml(plan[+n].it));
         out.rest = [];
-      } catch (e) { console.warn('HTML Tree: equation placement failed, falling back to end of note', e); return { html: safeHtml, rest: eqs.slice() }; }
-      finally { host.remove(); }
+      } catch (e) { console.warn('HTML Tree: note image/equation placement failed, falling back to end of note', e); return { html: safeHtml, rest: ok.slice() }; }
+      finally { wrap.remove(); }
       return out;
     }
     function renderExportNote(n) {
       const d = n.data || {}, safe = window.MM.safeNoteHtml, blk = h => safe ? safe(h) : '<div>' + esc(strip(h)) + '</div>'; let html = '';
       const raw = d.notesHtml || (d.notes ? '<div>' + esc(d.notes) + '</div>' : '');
-      const layer = (d.noteImgs || []).slice().sort(exportLayerSort), eqs = layer.filter(it => it && it.eq), pics = layer.filter(it => !(it && it.eq));
-      let restEqs = eqs; /* المعادلات اللي ملهاش نص تتحط جواه (أو القياس فشل) بترجع تحت زي الأول */
-      if (hasExportContent(raw)) { const r = eqs.length ? exportNoteWithEqs(blk(raw), eqs) : { html: blk(raw), rest: [] }; html += '<div class="nt">' + r.html + '</div>'; restEqs = r.rest; }
+      const layer = (d.noteImgs || []).filter(Boolean).sort(exportLayerSort);
+      let rest = layer; /* العناصر اللي ملهاش نص تتحط جواه (أو القياس فشل) بترجع تحت زي الأول */
+      if (hasExportContent(raw)) { const r = layer.length ? exportNoteWithLayer(blk(raw), layer) : { html: blk(raw), rest: [] }; html += '<div class="nt">' + r.html + '</div>'; rest = r.rest; }
       (d.noteBoxes || []).slice().sort(exportLayerSort).forEach(b => { if (b && hasExportContent(b.html)) html += '<div class="nt">' + blk(b.html) + '</div>'; });
-      const tail = layer.filter(it => it && (it.eq ? restEqs.indexOf(it) >= 0 : pics.indexOf(it) >= 0));
-      const imgs = tail.map(it => it.eq ? exportEqHtml(it) : exportImgHtml(it)).join(''); if (imgs) html += '<div class="nimgs">' + imgs + '</div>';
+      const imgs = rest.map(it => it.eq ? exportEqHtml(it) : exportImgHtml(it)).join(''); if (imgs) html += '<div class="nimgs">' + imgs + '</div>';
       return html ? '<div class="note">' + html + '</div>' : '';
     }
     /* عنوان الـHTML Export: نفس exportTitleText بس المعادلات بتتحط كـMathML (placeholder ثم استبدال بعد الـesc) */
@@ -1712,7 +1820,7 @@ window.undo = undoAll; window.redo = redoAll;
           if (name === 'data-locked') { if (v === '1') return; c.removeAttribute(a.name); return; } /* ADD: Image Lock — نفس بيانات الصورة الحالية، بدون object/State منفصلة */
           if (name === 'style') { const bad = /url\s*\(|expression|javascript|@import|[<>{}]/i, propOk = /^\s*(color|background-color|font-family|font-size|font-weight|font-style|text-decoration|text-align|direction|line-height|vertical-align|border(?:-(?:top|right|bottom|left))?(?:-(?:color|width|style))?|padding|width|height|max-width|position|top|left|float|margin|margin-top|margin-left|margin-right|margin-bottom|display)\s*:/i;
             const ok = v.split(';').filter(x => { if (!propOk.test(x) || bad.test(x)) return false; const pm = /^\s*position\s*:\s*(.+)$/i.exec(x); return !pm || /^(relative|absolute)$/i.test(pm[1].trim()); }).join(';'); ok ? c.setAttribute('style', ok) : c.removeAttribute(a.name); return; } /* ADD: Image Lock — سمحنا بـposition:absolute عشان الصورة المقفولة تفضل Layer ثابت فوق/تحت النص بعد الحفظ */
-          c.removeAttribute(a.name); }); if (c.tagName === 'A') c.setAttribute('rel', 'noopener'); cleanNode(c); }); cleanNode(t.content); return t.innerHTML; }
+          c.removeAttribute(a.name); }); if (c.tagName === 'A') c.setAttribute('rel', 'noopener'); cleanNode(c); }); cleanNode(t.content); window.MMBidi.fixDom(t.content); return t.innerHTML; }
     let note2 = null, note2Id = null, note2Edit = null, note2Wrap = null, note2Layer = null, note2Boxes = null, note2Content = null, selBox = null;
     const newUid = () => 'x' + Math.random().toString(36).slice(2, 10);
     const LAYER_SEL = 'img,.mmN2eq'; /* طبقة واحدة للصور والمعادلات: نفس Select/Move/Resize/Tilt/Lock/Delete/Save — مفيش Engine تاني */
@@ -2279,7 +2387,7 @@ window.undo = undoAll; window.redo = redoAll;
     function migrateLegacyTables() { const ts = [...note2Edit.querySelectorAll('table')].filter(t => !t.parentElement.closest('table')); if (!ts.length) return; const host = note2Wrap.getBoundingClientRect(), sx = note2Wrap.scrollLeft, sy = note2Wrap.scrollTop;
       ts.map(t => { const r = t.getBoundingClientRect(); return { t, o: { tbl: 1, bo: false, html: t.outerHTML, x: Math.max(0, r.left - host.left + sx), y: Math.max(0, r.top - host.top + sy), w: Math.max(180, r.width) } }; })
         .forEach(({ t, o }) => { addBox(o); const p = t.parentNode; t.remove(); if (p && p !== note2Edit && !p.childNodes.length) p.appendChild(document.createElement('br')); }); } /* الجداول القديمة (جوه النص) بتتحول لجداول حرة مكانها */
-    function openNote2(id) { makeNote2(); imgLPStop(); lpTouchIds.clear(); hideImgMenu(); mzResetView(); mzSetOn(false); const o = C.get(id); if (!o) return; deselectImage(); replaceImgTarget = null; note2Id = id; note2Edit.innerHTML = o.data.notesHtml || (o.data.notes ? '<div>' + esc(o.data.notes) + '</div>' : '<div><br></div>'); const t = note2.querySelector('#mmN2title'); if (t) t.textContent = strip(o.data.richHtml) || o.data.title || 'Node'; note2.classList.add('show'); note2Layer.innerHTML = ''; (o.data.noteImgs || []).forEach(it => { if (it && it.eq) addLayerEq(it); else addLayerImg(it); }); note2Boxes.innerHTML = ''; selBox = null; (o.data.noteBoxes || []).forEach(addBox); note2Wrap.scrollTop = 0; note2Edit.focus(); migrateLegacyImgs(id); migrateLegacyTables(); }
+    function openNote2(id) { makeNote2(); imgLPStop(); lpTouchIds.clear(); hideImgMenu(); mzResetView(); mzSetOn(false); const o = C.get(id); if (!o) return; deselectImage(); replaceImgTarget = null; note2Id = id; note2Edit.innerHTML = o.data.notesHtml || (o.data.notes ? '<div>' + esc(o.data.notes) + '</div>' : '<div><br></div>'); window.MMBidi.fixDom(note2Edit); const t = note2.querySelector('#mmN2title'); if (t) t.textContent = strip(o.data.richHtml) || o.data.title || 'Node'; note2.classList.add('show'); note2Layer.innerHTML = ''; (o.data.noteImgs || []).forEach(it => { if (it && it.eq) addLayerEq(it); else addLayerImg(it); }); note2Boxes.innerHTML = ''; selBox = null; (o.data.noteBoxes || []).forEach(addBox); note2Wrap.scrollTop = 0; note2Edit.focus(); migrateLegacyImgs(id); migrateLegacyTables(); }
     function closeNote2(save) { if (!note2Id) return; hideBoxMenu(); hidePasteMenu(); imgLPStop(); lpTouchIds.clear(); hideImgMenu(); deselectImage(); replaceImgTarget = null; if (save) { const h = safeNoteHtml(note2Edit.innerHTML); C.set(note2Id, { 'data.notesHtml': h, 'data.notes': strip(h), 'data.noteImgs': serializeLayer(), 'data.noteBoxes': serializeBoxes() }, 'note'); } note2Id = null; note2.classList.remove('show'); refreshNodeDom(); }
 
     /* ---------- Group: Image Control داخل Rich Note (Select/Move/Resize/Delete/Replace) ----------
@@ -3484,7 +3592,7 @@ const css = el('style', { id: 'pjStyle' }, `
 .pjBtns .danger{background:#c62828;color:#fff;border-color:#c62828}
 .pjToast{position:fixed;z-index:5300;left:50%;transform:translateX(-50%);bottom:24px;background:#323232;color:#fff;padding:10px 16px;border-radius:8px;font-size:14px;max-width:90vw;direction:rtl}
 .pjToast.err{background:#c62828}
-.pjHtml{flex:0 0 auto;border:2px solid #5b87c5;background:rgba(91,135,197,.12);color:#3f6fae;border-radius:10px;padding:3px 10px;font:700 15px system-ui,sans-serif;direction:ltr;cursor:pointer;touch-action:manipulation}
+.pjHtml{flex:0 1 auto;min-width:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:2px solid #5b87c5;background:rgba(91,135,197,.12);color:#3f6fae;border-radius:10px;padding:3px 10px;font:700 13px system-ui,sans-serif;cursor:pointer;touch-action:manipulation}
 .pjHtml:hover{background:rgba(91,135,197,.24)}
 .pjHtmlView{position:fixed;inset:0;z-index:5150;display:flex;flex-direction:column;background:#fff}
 .pjHtmlBar{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:6px 12px;padding-top:calc(6px + env(safe-area-inset-top,0px));background:#1d2330;color:#fff;direction:rtl;font:600 14px system-ui,sans-serif}
@@ -3636,7 +3744,7 @@ function makeRow(m, isLast) {
   info.appendChild(el('div', { className: 'pjSub' }, 'آخر تعديل: ' + ago(m.updatedAt) + ' · ' + (m.nodeCount || 0) + ' عقدة' + (isLast ? ' · آخر مشروع' : '')));
   const more = el('button', { className: 'pjMore', type: 'button', title: 'Rename / html / Delete', ariaLabel: 'خيارات' }, '⋯');
   row.append(info);
-  if (m.htmlName) { const hb = el('button', { className: 'pjHtml', type: 'button', title: m.htmlName, ariaLabel: 'فتح الـ html' }, 'html'); hb.addEventListener('click', e => { e.stopPropagation(); openHtml(m); }); row.append(hb); }
+  if (m.htmlName) { const hb = el('button', { className: 'pjHtml', type: 'button', dir: 'auto', title: m.htmlName, ariaLabel: 'فتح الـ html' }, m.htmlName.replace(/\.html?$/i, '') || m.htmlName); hb.addEventListener('click', e => { e.stopPropagation(); openHtml(m); }); row.append(hb); }
   row.append(more);
   row.addEventListener('click', () => { if (suppressClick) { suppressClick = false; return; } openProject(m.id); });
   row.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === row) openProject(m.id); });
@@ -4126,6 +4234,7 @@ window.MMProjects = { openProject, goPicker, newProject, flush, Store, saveCopy 
       if (!r || !e.contains(r.startContainer)) { r = document.createRange(); r.selectNodeContents(e); r.collapse(false); }
       e.focus({ preventScroll: true }); s.removeAllRanges(); s.addRange(r);
     }
+    if (window.MMBidi && s.rangeCount) { const rg = s.getRangeAt(0); text = window.MMBidi.fixText(text, window.MMBidi.ctx(rg.startContainer, rg.startOffset)); }   /* الأس على اليمين جوه النص العربي */
     return runInsert(text);
   }
 
@@ -4177,7 +4286,7 @@ window.MMProjects = { openProject, goPicker, newProject, flush, Store, saveCopy 
   function continueDigit(s) {   /* x^1 → x¹ ثم كتابة 2 → x¹² */
     const n = s.length; if (n < 2 || !DIG.test(s[n - 1])) return s;
     const p = s[n - 2], isSup = SUPD.has(p); if (!isSup && !SUBD.has(p)) return s;
-    const set = isSup ? SUPD : SUBD; let b = n - 2; while (b >= 0 && set.has(s[b])) b--;
+    const set = isSup ? SUPD : SUBD; let b = n - 2; while (b >= 0 && (set.has(s[b]) || s[b] === '\u200E')) b--;   /* LRM (MMBidi) جوه مجموعة الأس مش بيقطعها */
     if (baseIndex(s, b, isSup ? SUP_ALL : SUB_ALL, isSup ? SUB_ALL : SUP_ALL, false) < 0) return s;
     return s.slice(0, n - 1) + (isSup ? SUP : SUB)[s[n - 1]];
   }
@@ -4197,12 +4306,28 @@ window.MMProjects = { openProject, goPicker, newProject, flush, Store, saveCopy 
     const pos = r.startOffset, seg = segmentAt(node, pos), s = seg.t.slice(seg.a, pos);
     if (s.indexOf('^') < 0 && s.indexOf('_') < 0 && !(mode === 'imm' && (SUPD.has(s[s.length - 2]) || SUBD.has(s[s.length - 2])))) return false;
     if (EXCL.test(seg.t.slice(seg.a, seg.b))) return false;
-    const out = convertString(s, mode); if (out === s) return false;
+    let out = convertString(s, mode); if (window.MMBidi) out = window.MMBidi.fixText(out, window.MMBidi.ctx(node, seg.a)); if (out === s) return false;   /* الأس على اليمين جوه النص العربي */
     let p = 0; while (p < s.length && p < out.length && s[p] === out[p]) p++;      /* أصغر مدى متغيّر بس */
     const rng = document.createRange(); rng.setStart(node, seg.a + p); rng.setEnd(node, pos);
     sel.removeAllRanges(); sel.addRange(rng);
     runInsert(out.slice(p));                                                        /* الـcaret بعد النص المُدخل */
     return true;
+  }
+  /* الأس على اليمين لو اتكتب/اتعدّل بأي طريقة (علامة عادية قبل الأس، كتابة عربي قبل رقم موجود، لصق…): بنضيف LRM بـexecCommand (خطوة Undo أصلية) ونرجّع الـcaret مكانه */
+  function bidiFixBlock() {
+    const B = window.MMBidi; if (!B || converting || composing) return;
+    const e = ed(); if (!e || !noteOpen()) return;
+    const sel = getSelection(); if (!sel.rangeCount) return;
+    const r0 = sel.getRangeAt(0); if (!e.contains(r0.startContainer) || !e.contains(r0.endContainer)) return;
+    const el = r0.startContainer.nodeType === 1 ? r0.startContainer : r0.startContainer.parentElement;
+    const blk = (el && el.closest && el.closest('div,p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre')) || e;
+    if (!B.needs(blk.textContent) || !B.firstFix(blk)) return;
+    const keep = r0.cloneRange(); let guard = 0, hit;
+    while (guard++ < 8 && (hit = B.firstFix(blk))) {
+      const rg = document.createRange(); rg.setStart(hit.node, hit.off); rg.collapse(true);
+      sel.removeAllRanges(); sel.addRange(rg); runInsert(B.LRM);
+    }
+    try { sel.removeAllRanges(); sel.addRange(keep); } catch (err) {}
   }
   function scheduleIdle() {
     clearTimeout(idleT);
@@ -4217,13 +4342,13 @@ window.MMProjects = { openProject, goPicker, newProject, flush, Store, saveCopy 
     }, IDLE_MS);
   }
   document.addEventListener('compositionstart', e => { if (e.target === ed()) { composing = true; clearTimeout(idleT); } }, true);
-  document.addEventListener('compositionend', e => { if (e.target === ed()) { composing = false; setTimeout(() => { if (!composing) convertAtCaret('full'); }, 0); } }, true);
+  document.addEventListener('compositionend', e => { if (e.target === ed()) { composing = false; setTimeout(() => { if (!composing) { convertAtCaret('full'); bidiFixBlock(); } }, 0); } }, true);
   /* bubble phase: بعد معالجات حجم الخط/اقتراح الـ#tags الموجودة */
   document.addEventListener('input', e => {
     if (e.target !== ed()) return; clearTimeout(idleT);
-    if (converting || composing || e.isComposing || e.inputType !== 'insertText' || typeof e.data !== 'string' || e.data.length !== 1) return;
-    convertAtCaret(/[A-Za-z0-9\u0370-\u03ff^_]/.test(e.data) ? 'imm' : 'full');
-    scheduleIdle();
+    if (converting || composing || e.isComposing || /^history/.test(e.inputType || '')) return;   /* Undo/Redo: ما نعيدش إضافة LRM */
+    if (e.inputType === 'insertText' && typeof e.data === 'string' && e.data.length === 1) { convertAtCaret(/[A-Za-z0-9\u0370-\u03ff^_]/.test(e.data) ? 'imm' : 'full'); scheduleIdle(); }
+    bidiFixBlock();
   });
   document.addEventListener('keydown', e => {
     if (e.target !== ed()) return; clearTimeout(idleT);
@@ -4233,7 +4358,7 @@ window.MMProjects = { openProject, goPicker, newProject, flush, Store, saveCopy 
     if (e.target !== ed() || e.defaultPrevented || !e.clipboardData) return;
     const types = Array.from(e.clipboardData.types || []); if (types.includes('text/html') || types.includes('Files')) return;   /* HTML/صور/جداول: لصق native بلا تحويل */
     const txt = e.clipboardData.getData('text/plain'); if (!txt) return;
-    const out = convertPlain(txt); if (out === txt) return;
+    let out = convertPlain(txt); if (window.MMBidi) { const sl = getSelection(), rg = sl.rangeCount ? sl.getRangeAt(0) : null; out = window.MMBidi.fixText(out, rg ? window.MMBidi.ctx(rg.startContainer, rg.startOffset) : false); } if (out === txt) return;
     e.preventDefault(); runInsert(out);
   }, true);
 
