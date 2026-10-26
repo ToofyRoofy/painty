@@ -1724,11 +1724,34 @@ window.undo = undoAll; window.redo = redoAll;
 /* Text Scale: النص بيتكبّر/يتصغّر مع الصندوق — الـbody بيتعرض بـtransform:scale(--ts) وعرضه/ارتفاعه 100%/--ts، فالـHTML والـformatting زي ما هم والنص بيعيد التفاف جوه الحجم الجديد */
 .mmBoxBody{width:calc(100% / var(--ts,1));height:calc(100% / var(--ts,1));transform:scale(var(--ts,1));transform-origin:0 0;overflow:auto;outline:none;font-size:14px;line-height:1.4;cursor:text;min-height:0;unicode-bidi:plaintext}
 .mmBoxBody:empty:before{content:'اكتب هنا...';opacity:.5}
-.mmN2box.tbl{padding:0;min-width:60px}
+.mmN2box.tbl{padding:0;min-width:0}
 .mmN2box.tbl .mmBoxBody{height:auto;overflow:visible;cursor:default}
 .mmBoxBody table{border-collapse:collapse;width:100%;table-layout:fixed}
-.mmBoxBody td,.mmBoxBody th,#mmN2edit td,#mmN2edit th{border:1px solid var(--tbc,#000);padding:4px 6px;min-width:24px;height:1.9em;vertical-align:top;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}
+.mmBoxBody td,.mmBoxBody th,#mmN2edit td,#mmN2edit th{border:1px solid var(--tbc,#000);padding:4px 6px;min-width:24px;vertical-align:top;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}
 #mmN2edit table{border-collapse:collapse;margin:6px 0}
+#mmN2edit td,#mmN2edit th,.mmBoxBody tr:not([style*="height"])>td,.mmBoxBody tr:not([style*="height"])>th{height:1.9em}
+/* ===== مقابض تغيير مساحة الجدول: عرض / ارتفاع / الاتنين — مستقلين، من غير ما الخط يتأثر ===== */
+.tRz{position:absolute;z-index:4;display:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.mmN2box.tbl.sel>.tRz{display:block}
+.tRz:after{content:'';position:absolute;background:#3b82f6;border:2px solid #fff;box-shadow:0 1px 5px rgba(15,23,42,.4);box-sizing:border-box;pointer-events:none;transition:background .12s}
+.tRz:hover:after{background:#1d4ed8}
+.tRz.r{right:-14px;top:calc(50% - 22px);width:22px;height:44px;cursor:ew-resize}
+.tRz.r:after{left:4px;top:7px;width:8px;height:30px;border-radius:6px}
+.tRz.b{bottom:-14px;left:calc(50% - 22px);width:44px;height:22px;cursor:ns-resize}
+.tRz.b:after{top:4px;left:7px;height:8px;width:30px;border-radius:6px}
+.tRz.c{right:-16px;bottom:-16px;width:26px;height:26px;cursor:nwse-resize;z-index:5}
+.tRz.c:after{left:5px;top:5px;width:14px;height:14px;border-radius:50%}
+@media (pointer:coarse){
+.tRz.r{right:-28px;top:calc(50% - 32px);width:38px;height:64px}
+.tRz.r:after{left:11px;top:10px;width:10px;height:44px}
+.tRz.b{bottom:-28px;left:calc(50% - 32px);width:64px;height:38px}
+.tRz.b:after{top:11px;left:10px;height:10px;width:44px}
+.tRz.c{right:-30px;bottom:-30px;width:44px;height:44px}
+.tRz.c:after{left:12px;top:12px;width:20px;height:20px}
+}
+.mmBoxBody td.tgc,.mmBoxBody th.tgc{box-shadow:inset -3px 0 0 #3b82f6}
+.mmBoxBody td.tgr,.mmBoxBody th.tgr{box-shadow:inset 0 -3px 0 #3b82f6}
+#mmTblDim{position:fixed;z-index:2300;display:none;pointer-events:none;direction:ltr;background:#1e293b;color:#fff;font:600 12px/1 system-ui,sans-serif;font-variant-numeric:tabular-nums;padding:6px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(15,23,42,.3);transform:translateX(-50%)}
 /* ===== جدول: تحديد + شريط أدوات + قائمة كليك يمين ===== */
 .mmN2box.tbl.sel{outline:1.5px solid #3b82f6;outline-offset:2px;box-shadow:0 4px 18px rgba(59,130,246,.16)}
 .mmBoxBody td.tsel,.mmBoxBody th.tsel{background-image:linear-gradient(rgba(59,130,246,.28),rgba(59,130,246,.28))}
@@ -1875,7 +1898,7 @@ window.undo = undoAll; window.redo = redoAll;
     function updateBoxRz(b) { const rz = b.querySelector('.mmBoxRz'); if (!rz) return; const sz = boxSize(b), hs = Math.round(Math.max(18, Math.min(30, Math.min(sz.w, sz.h) * 0.8))); /* Hit Area كبيرة والـVisual صغير؛ بتصغر بس مع الصناديق الصغيرة جدًا */
       b.style.setProperty('--hs', hs + 'px'); rz.style.width = rz.style.height = hs + 'px'; rz.style.right = rz.style.bottom = Math.round(-hs * 0.3) + 'px'; }
     function caretIn(el) { const r = document.createRange(), q = getSelection(); r.selectNodeContents(el); r.collapse(false); q.removeAllRanges(); q.addRange(r); }
-    function fitTbl(b) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; b.style.height = Math.max(BOX_MIN_H, Math.ceil(t.offsetHeight * (+b.dataset.ts || 1))) + 'px'; updateBoxRz(b); } /* ارتفاع الصندوق يتبع الصفوف دايمًا */
+    function fitTbl(b) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; const ts = +b.dataset.ts || 1; if (/^[\d.]+px$/.test(t.style.width)) b.style.width = Math.max(BOX_MIN_W, parseFloat(t.style.width) * ts).toFixed(2) + 'px'; b.style.height = Math.max(BOX_MIN_H, Math.ceil(t.offsetHeight * ts)) + 'px'; updateBoxRz(b); } /* الصندوق بيتبع الجدول: العرض = مجموع الأعمدة (px) × مقياس النص، والارتفاع = الصفوف */
     /* ===== Table engine (Grid model: بيدعم دمج/فصل الخلايا rowspan/colspan) ===== */
     const tG = t => { const g = [], st = new Map(), H = t.rows.length; [...t.rows].forEach((tr, r) => { g[r] = g[r] || []; let c = 0; [...tr.cells].forEach(cell => { while (g[r][c]) c++; const rs = Math.max(1, cell.rowSpan || 1), cs = Math.max(1, cell.colSpan || 1); st.set(cell, [r, c]); for (let i = 0; i < rs && r + i < H; i++) { g[r + i] = g[r + i] || []; for (let j = 0; j < cs; j++) g[r + i][c + j] = cell; } c += cs; }); }); g.length = H; return { g, st, H, W: Math.max(0, ...g.map(x => x.length)) }; };
     const tNew = (rs, cs, ref) => { const c = document.createElement('td'); if (rs > 1) c.rowSpan = rs; if (cs > 1) c.colSpan = cs; c.innerHTML = '<br>'; if (ref) ['border', 'textAlign', 'verticalAlign'].forEach(k => { if (ref.style[k]) c.style[k] = ref.style[k]; }); return c; };
@@ -1908,9 +1931,12 @@ window.undo = undoAll; window.redo = redoAll;
       return tGrow({ t, G, multi: !!b.__sel, r1: Math.min(pa[0], pf[0]), c1: Math.min(pa[1], pf[1]), r2: Math.max(pa[0] + (a.rowSpan || 1) - 1, pf[0] + (f.rowSpan || 1) - 1), c2: Math.max(pa[1] + (a.colSpan || 1) - 1, pf[1] + (f.colSpan || 1) - 1) }); }
     function tPaint(b) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; t.querySelectorAll('.tsel,.tcur').forEach(x => x.classList.remove('tsel', 'tcur')); /* تحديد الخلايا = class مؤقت، بيتشال في الحفظ */
       if (b.__sel) { const R = tRect(b); if (R) tCellsIn(R).forEach(c => c.classList.add('tsel')); } else if (b.__cell && b.__cell.isConnected) b.__cell.classList.add('tcur'); }
-    function tCols(t, W) { let cg = t.querySelector('colgroup'); if (!cg) { cg = document.createElement('colgroup'); t.prepend(cg); } while (cg.children.length < W) cg.appendChild(document.createElement('col')); while (cg.children.length > W) cg.lastChild.remove();
-      const cols = [...cg.children], ws = cols.map(c => parseFloat(c.style.width) || 0), kn = ws.filter(x => x > 0), avg = kn.length ? kn.reduce((p, q) => p + q, 0) / kn.length : 100 / W, v = ws.map(x => x > 0 ? x : avg), tot = v.reduce((p, q) => p + q, 0);
-      cols.forEach((c, i) => { c.style.width = (v[i] / tot * 100).toFixed(2) + '%'; }); return cols; } /* عرض الأعمدة % من الجدول (colgroup) */
+    const TMINC = 24, TMINR = 8; /* أقل عرض عمود / ارتفاع صف (px جوه الجدول، قبل مقياس النص) */
+    const tWidthPx = t => /^[\d.]+px$/.test(t.style.width) ? parseFloat(t.style.width) : t.offsetWidth;
+    function tCols(t, W, avail) { let cg = t.querySelector('colgroup'); if (!cg) { cg = document.createElement('colgroup'); t.prepend(cg); } while (cg.children.length < W) cg.appendChild(document.createElement('col')); while (cg.children.length > W) cg.lastChild.remove();
+      const cols = [...cg.children], av = avail || t.offsetWidth || 200, ws = cols.map(c => { const q = c.style.width || '', n = parseFloat(q); return n > 0 ? (/%\s*$/.test(q) ? n / 100 * av : n) : 0; }), kn = ws.filter(x => x > 0), avg = kn.length ? kn.reduce((p, q) => p + q, 0) / kn.length : av / W, v = ws.map(x => Math.max(TMINC, x > 0 ? x : avg));
+      cols.forEach((c, i) => { c.style.width = v[i].toFixed(2) + 'px'; }); t.style.width = v.reduce((p, q) => p + q, 0).toFixed(2) + 'px'; return cols; } /* عرض كل عمود بالـpx (colgroup) وعرض الجدول = مجموعهم، فكل عمود مستقل. الجداول القديمة (٪) بتتحوّل لـpx أول ما تتفتح */
+    function tNorm(b) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; const W = tG(t).W; if (W) tCols(t, W, (parseFloat(b.style.width) || 200) / (+b.dataset.ts || 1)); }
     function tAct(b, a) { const R = tRect(b); if (!R) return; const { t, G } = R, cells = tCellsIn(R), cg0 = () => t.querySelector('colgroup'); let sel = null;
       if (a === 'ra') tInsRow(t, R.r1); else if (a === 'rb') tInsRow(t, R.r2 + 1);
       else if (a === 'ca' || a === 'cb') { const k = a === 'ca' ? R.c1 : R.c2 + 1, cg = cg0(); tInsCol(t, k); if (cg) { const col = document.createElement('col'); cg.children[k] ? cg.insertBefore(col, cg.children[k]) : cg.appendChild(col); tCols(t, tG(t).W); } }
@@ -1918,7 +1944,8 @@ window.undo = undoAll; window.redo = redoAll;
       else if (a === 'cd') { for (let c = R.c2; c >= R.c1; c--) { if (!tDelCol(t, c)) break; const cg = cg0(); if (cg && cg.children[c]) { cg.children[c].remove(); tCols(t, tG(t).W); } } }
       else if (a === 'merge') { const m = tMerge(t, R); if (m) b.__cell = m; } else if (a === 'split') tSplit(t, G.g[R.r1][R.c1]);
       else if (a === 'selrow') sel = [G.g[R.r1][0], G.g[R.r2][G.W - 1]]; else if (a === 'selcol') sel = [G.g[0][R.c1], G.g[G.H - 1][R.c2]]; else if (a === 'selall') sel = [G.g[0][0], G.g[G.H - 1][G.W - 1]];
-      else if (a === 'eq') { const cg = cg0(); if (cg) [...cg.children].forEach(c => { c.style.width = ''; }); tCols(t, G.W); [...t.rows].forEach(r => { r.style.height = ''; }); }
+      else if (a === 'eq') { const cg = cg0(), tw = tWidthPx(t); if (cg) [...cg.children].forEach(c => { c.style.width = ''; }); tCols(t, G.W, tw); }
+      else if (a === 'eqr') { const k = (+b.dataset.ts || 1) * (mzZoom || 1), rs = [...t.rows], hs = rs.map(r => r.getBoundingClientRect().height / k), each = hs.reduce((p, q) => p + q, 0) / (hs.length || 1); rs.forEach(r => { r.style.height = each.toFixed(1) + 'px'; }); }
       else if (a === 'del') { if (selBox === b) selBox = null; hideBoxMenu(); hideTblMenu(); b.remove(); return; }
       else if (a === 'bold') { const on = cells.every(c => /^(bold|[6-9]00)$/.test(c.style.fontWeight)); cells.forEach(c => { c.style.fontWeight = on ? '' : '700'; }); }
       else if (a === 'hdr') { const row = tCellsIn({ G, r1: 0, r2: 0, c1: 0, c2: G.W - 1 }), on = row.every(c => /^(bold|[6-9]00)$/.test(c.style.fontWeight)); row.forEach(c => { c.style.fontWeight = on ? '' : '700'; c.style.backgroundColor = on ? '' : '#e8eefc'; c.style.textAlign = on ? '' : 'center'; }); }
@@ -1932,13 +1959,36 @@ window.undo = undoAll; window.redo = redoAll;
     let tBd = { w: 1, c: '#000000' };
     function tBorder(b) { const R = tRect(b); if (!R) return; const cs = R.multi ? tCellsIn(R) : [...R.t.querySelectorAll('td,th')]; /* من غير تحديد = كل الجدول */
       cs.forEach(c => { c.style.border = tBd.w === 0 ? 'none' : tBd.w + 'px solid ' + tBd.c; }); fitTbl(b); }
-    function tEdge(b, e) { const c = e.target.closest && e.target.closest('td,th'); if (!c || !b.contains(c)) return null; const r = c.getBoundingClientRect(), near = e.pointerType === 'mouse' ? 5 : 12, dR = Math.abs(e.clientX - r.right), dL = Math.abs(e.clientX - r.left), dB = Math.abs(e.clientY - r.bottom); if (dR > near && dL > near && dB > near) return null;
-      const t = c.closest('table'), G = tG(t), p = G.st.get(c), c1 = p[1] + (c.colSpan || 1), r1 = p[0] + (c.rowSpan || 1) - 1; if (dR <= near && c1 < G.W) return { k: 'col', i: c1 - 1, t, G }; if (dL <= near && p[1] > 0) return { k: 'col', i: p[1] - 1, t, G }; if (dB <= near && r1 < G.H - 1) return { k: 'row', i: r1, t, G }; return null; } /* حدود داخلية بس */
-    function tStartResize(b, g, e) { const { t, G } = g, sc = (+b.dataset.ts || 1) * (mzZoom || 1), x0 = e.clientX, y0 = e.clientY; let cols = null, w0 = null, h0 = 0;
-      if (g.k === 'col') { cols = tCols(t, G.W); w0 = cols.map(c => parseFloat(c.style.width) || 0); } else h0 = t.rows[g.i].offsetHeight;
-      const mv = ev => { ev.preventDefault(); if (g.k === 'col') { const d = Math.max(-(w0[g.i] - 4), Math.min(w0[g.i + 1] - 4, (ev.clientX - x0) / Math.max(1, t.offsetWidth * sc) * 100)); cols[g.i].style.width = (w0[g.i] + d).toFixed(2) + '%'; cols[g.i + 1].style.width = (w0[g.i + 1] - d).toFixed(2) + '%'; } else t.rows[g.i].style.height = Math.max(18, h0 + (ev.clientY - y0) / sc) + 'px'; fitTbl(b); };
-      const up = () => { ['pointermove', 'pointerup', 'pointercancel'].forEach(n => document.removeEventListener(n, n === 'pointermove' ? mv : up, true)); };
-      document.addEventListener('pointermove', mv, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true); } /* سحب حدود العمود/الصف */
+    function tEdge(b, e) { const c = e.target.closest && e.target.closest('td,th'); if (!c || !b.contains(c)) return null; const r = c.getBoundingClientRect(), near = e.pointerType === 'mouse' ? 6 : 9, dR = Math.abs(e.clientX - r.right), dL = Math.abs(e.clientX - r.left), dB = Math.abs(e.clientY - r.bottom), dT = Math.abs(e.clientY - r.top); if (dR > near && dL > near && dB > near && dT > near) return null;
+      const t = c.closest('table'), G = tG(t), p = G.st.get(c), c1 = p[1] + (c.colSpan || 1), r1 = p[0] + (c.rowSpan || 1) - 1; if (dR <= near && c1 < G.W) return { k: 'col', i: c1 - 1, t, G }; if (dL <= near && p[1] > 0) return { k: 'col', i: p[1] - 1, t, G }; if (dB <= near && r1 < G.H - 1) return { k: 'row', i: r1, t, G }; if (dT <= near && p[0] > 0) return { k: 'row', i: p[0] - 1, t, G }; return null; } /* حدود داخلية بس — من الناحيتين (الخلية اللي فوق الخط واللي تحته) */
+    const tEdgeCells = (G, k, i) => { const q = new Set(); for (let r = 0; r < G.H; r++) for (let c = 0; c < G.W; c++) { const x = G.g[r][c]; if (!x || q.has(x)) continue; const p = G.st.get(x); if (k === 'c' ? p[1] + (x.colSpan || 1) - 1 === i : p[0] + (x.rowSpan || 1) - 1 === i) q.add(x); } return [...q]; }; /* الخلايا اللي حدها اليمين/التحتاني هو الحد المسحوب */
+    let tdim = null;
+    function tDim(b, ev) { if (!tdim) { tdim = document.createElement('div'); tdim.id = 'mmTblDim'; document.body.appendChild(tdim); } if (!ev) { tdim.style.display = 'none'; return; } const t = b.querySelector('.mmBoxBody table'); if (!t) return; const k = (+b.dataset.ts || 1) * (mzZoom || 1), V = vvp();
+      tdim.textContent = Math.round(tWidthPx(t)) + ' × ' + Math.round(t.getBoundingClientRect().height / k); tdim.style.display = 'block'; tdim.style.left = Math.max(V.l + 40, Math.min(V.l + V.w - 40, ev.clientX)) + 'px'; tdim.style.top = Math.max(V.t + 6, ev.clientY - (ev.pointerType === 'mouse' ? 38 : 70)) + 'px'; } /* شارة مقاس لحظية (عرض × ارتفاع) وقت السحب */
+    function tStartResize(b, g, e) { const { t, G } = g, k = (+b.dataset.ts || 1) * (mzZoom || 1), x0 = e.clientX, y0 = e.clientY; let cols = null, w0 = null, h0 = 0;
+      if (g.k === 'col') { cols = tCols(t, G.W); w0 = cols.map(c => parseFloat(c.style.width) || TMINC); } else h0 = t.rows[g.i].getBoundingClientRect().height / k;
+      const mark = tEdgeCells(G, g.k === 'col' ? 'c' : 'r', g.i); mark.forEach(c => c.classList.add(g.k === 'col' ? 'tgc' : 'tgr')); /* خط أزرق على الحد اللي بتسحبه */
+      const mv = ev => { if (ev.pointerId !== e.pointerId) return; ev.preventDefault();
+        if (g.k === 'col') { const i = g.i, nx = cols[i + 1], d = Math.max(TMINC - w0[i], (ev.clientX - x0) / k), dn = nx && ev.shiftKey ? Math.min(d, w0[i + 1] - TMINC) : d; /* عمود واحد بس والجدول يكبر/يصغر؛ Shift = على حساب العمود اللي جنبه */
+          cols[i].style.width = (w0[i] + dn).toFixed(2) + 'px'; if (nx) nx.style.width = (ev.shiftKey ? w0[i + 1] - dn : w0[i + 1]).toFixed(2) + 'px'; b.querySelector('.mmBoxBody table').style.width = cols.reduce((p, c) => p + parseFloat(c.style.width), 0).toFixed(2) + 'px'; }
+        else t.rows[g.i].style.height = Math.max(TMINR, h0 + (ev.clientY - y0) / k).toFixed(1) + 'px';
+        fitTbl(b); tDim(b, ev); };
+      const up = ev => { if (ev && ev.pointerId !== e.pointerId) return; ['pointermove', 'pointerup', 'pointercancel'].forEach(n => document.removeEventListener(n, n === 'pointermove' ? mv : up, true)); mark.forEach(c => c.classList.remove('tgc', 'tgr')); tDim(b, null); };
+      document.addEventListener('pointermove', mv, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true); tDim(b, e); } /* سحب حدود العمود/الصف: كل واحد مستقل */
+    /* تغيير مساحة الجدول: عرض (sx) و/أو ارتفاع (sy) مستقلين — الأعمدة/الصفوف بتتغيّر بالتناسب والخط ثابت. Shift = العمود/الصف الأخير بس */
+    function tAreaStart(b, d, e) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; const G = tG(t), ts = +b.dataset.ts || 1, k = ts * (mzZoom || 1), cols = tCols(t, G.W), c0 = cols.map(c => parseFloat(c.style.width) || TMINC), W0 = c0.reduce((p, q) => p + q, 0), rows = [...t.rows], r0 = rows.map(r => r.getBoundingClientRect().height / k), R0 = r0.reduce((p, q) => p + q, 0) || 1, H0 = t.getBoundingClientRect().height / k, l0 = parseFloat(b.style.left) || 0, tp0 = parseFloat(b.style.top) || 0, last = cols.length - 1, lr = rows.length - 1;
+      const mv = ev => { if (ev.pointerId !== e.pointerId) return; ev.preventDefault();
+        if (d.sx) { const dx = d.sx * (ev.clientX - e.clientX) / k; let tw = Math.max(cols.length * TMINC, W0 + dx); if (d.sx < 0) tw = Math.min(tw, W0 + l0 / ts); /* من اليسار: ما يخرجش برا الحافة */
+          const v = ev.shiftKey && d.sx > 0 ? c0.map((x, i) => i === last ? Math.max(TMINC, x + dx) : x) : c0.map(x => Math.max(TMINC, x * tw / W0));
+          cols.forEach((c, i) => { c.style.width = v[i].toFixed(2) + 'px'; }); t.style.width = v.reduce((p, q) => p + q, 0).toFixed(2) + 'px'; if (d.sx < 0) b.style.left = Math.max(0, l0 + (W0 - parseFloat(t.style.width)) * ts) + 'px'; }
+        if (d.sy) { const dy = d.sy * (ev.clientY - e.clientY) / k; let th = Math.max(rows.length * TMINR, R0 + dy); if (d.sy < 0) th = Math.min(th, R0 + tp0 / ts);
+          rows.forEach((r, i) => { r.style.height = (ev.shiftKey && d.sy > 0 ? (i === lr ? Math.max(TMINR, r0[i] + dy) : r0[i]) : Math.max(TMINR, r0[i] * th / R0)).toFixed(1) + 'px'; });
+          if (d.sy < 0) b.style.top = Math.max(0, tp0 + (H0 - t.getBoundingClientRect().height / k) * ts) + 'px'; }
+        fitTbl(b); tDim(b, ev); };
+      const up = ev => { if (ev && ev.pointerId !== e.pointerId) return; ['pointermove', 'pointerup', 'pointercancel'].forEach(n => document.removeEventListener(n, n === 'pointermove' ? mv : up, true)); tDim(b, null); };
+      document.addEventListener('pointermove', mv, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true); tDim(b, e); }
+    function tHandles(b) { [['r', 1, 0, 'عرض الجدول — اسحب يمين/يسار (Shift = العمود الأخير بس)'], ['b', 0, 1, 'ارتفاع الجدول — اسحب فوق/تحت (Shift = الصف الأخير بس)'], ['c', 1, 1, 'عرض + ارتفاع الجدول']].forEach(([k, sx, sy, tip]) => { const h = document.createElement('i'); h.className = 'tRz ' + k; h.contentEditable = 'false'; h.title = tip;
+        h.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && e.button !== 0) return; e.preventDefault(); e.stopPropagation(); hideBoxMenu(); hideTblMenu(); selectBox(b); try { h.setPointerCapture(e.pointerId); } catch (err) { } tAreaStart(b, { sx, sy }, e); }); b.appendChild(h); }); }
     /* ----- تفاعل الجدول: السحب والتكبير من الجدول نفسه (من غير مقابض) -----
        الأولوية: ركن = تكبير | حد داخلي = عرض عمود/ارتفاع صف | الإطار الخارجي = تحريك | جسم الجدول = تحريك (لو مش بتكتب فيه) | غير كده = كتابة وتحديد خلايا */
     const tblEditing = b => { const s = getSelection(), n = s && s.anchorNode; return !!(n && b.classList.contains('sel') && b.querySelector('.mmBoxBody').contains(n)); };
@@ -1966,12 +2016,12 @@ window.undo = undoAll; window.redo = redoAll;
     /* ----- الأيقونات (SVG بسيطة بخط واحد) ----- */
     const TI = { ra: '<rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M12 3v7M8.5 6.5h7"/>', rb: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><path d="M12 14v7M8.5 17.5h7"/>', ca: '<rect x="13" y="3" width="7" height="18" rx="1.5"/><path d="M3 12h7M6.5 8.5v7"/>', cb: '<rect x="4" y="3" width="7" height="18" rx="1.5"/><path d="M14 12h7M17.5 8.5v7"/>',
       rd: '<rect x="3" y="7" width="18" height="10" rx="1.5"/><path d="M10 10.5l4 3M14 10.5l-4 3"/>', cd: '<rect x="7" y="3" width="10" height="18" rx="1.5"/><path d="M10 10l4 4M14 10l-4 4"/>', merge: '<rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M7.5 12h9M7.5 12l2.2-2.2M7.5 12l2.2 2.2M16.5 12l-2.2-2.2M16.5 12l-2.2 2.2"/>', split: '<rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M12 5v14M5.5 12h4M18.5 12h-4"/>',
-      selrow: '<rect x="3" y="9" width="18" height="6" rx="1" stroke-dasharray="2.4 2"/><path d="M3 4.5h18M3 19.5h18" opacity=".4"/>', selcol: '<rect x="9" y="3" width="6" height="18" rx="1" stroke-dasharray="2.4 2"/><path d="M4.5 3v18M19.5 3v18" opacity=".4"/>', selall: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="2.6 2.2"/><path d="M3 12h18M12 3v18" opacity=".45"/>', eq: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M9 4v16M15 4v16"/>',
+      selrow: '<rect x="3" y="9" width="18" height="6" rx="1" stroke-dasharray="2.4 2"/><path d="M3 4.5h18M3 19.5h18" opacity=".4"/>', selcol: '<rect x="9" y="3" width="6" height="18" rx="1" stroke-dasharray="2.4 2"/><path d="M4.5 3v18M19.5 3v18" opacity=".4"/>', selall: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="2.6 2.2"/><path d="M3 12h18M12 3v18" opacity=".45"/>', eq: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M9 4v16M15 4v16"/>', eqr: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9.3h18M3 14.7h18"/>',
       del: '<path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/>', fill: '<path d="M6 12.5l6.5-6.5 5.5 5.5-6.5 6.5z"/><path d="M19.5 14.5s1.8 2 1.8 3.2a1.8 1.8 0 01-3.6 0c0-1.2 1.8-3.2 1.8-3.2z"/>', fg: '<path d="M7 17l5-11 5 11M9 13h6"/>', border: '<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 12h16M12 4v16" opacity=".5"/>',
       alL: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', alC: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', alR: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>', vaT: '<path d="M4 4h16M12 20V9M8 12.5l4-4 4 4"/>', vaM: '<path d="M4 12h16M12 3v6M9 6l3 3 3-3M12 21v-6M9 18l3-3 3 3"/>', vaB: '<path d="M4 20h16M12 4v11M8 11.5l4 4 4-4"/>',
       bold: '<path d="M7 5h6a3.5 3.5 0 010 7H7zM7 12h7a3.5 3.5 0 010 7H7z"/>', hdr: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9.5h18" stroke-width="3.2"/>', more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>' };
     const ico = (k, s) => '<svg viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + TI[k] + '</svg>';
-    const LB = { ra: 'صف فوق', rb: 'صف تحت', ca: 'عمود يسار', cb: 'عمود يمين', rd: 'حذف صف', cd: 'حذف عمود', merge: 'دمج', split: 'فصل', selrow: 'تحديد الصف', selcol: 'تحديد العمود', selall: 'تحديد الكل', eq: 'تساوي الأعمدة', del: 'حذف الجدول', 'al-left': 'يسار', 'al-center': 'وسط', 'al-right': 'يمين', 'va-top': 'أعلى', 'va-middle': 'منتصف', 'va-bottom': 'أسفل', bold: 'عريض', hdr: 'صف عنوان', more: 'كل الخيارات' };
+    const LB = { ra: 'صف فوق', rb: 'صف تحت', ca: 'عمود يسار', cb: 'عمود يمين', rd: 'حذف صف', cd: 'حذف عمود', merge: 'دمج', split: 'فصل', selrow: 'تحديد الصف', selcol: 'تحديد العمود', selall: 'تحديد الكل', eq: 'تساوي الأعمدة', eqr: 'تساوي الصفوف', del: 'حذف الجدول', 'al-left': 'يسار', 'al-center': 'وسط', 'al-right': 'يمين', 'va-top': 'أعلى', 'va-middle': 'منتصف', 'va-bottom': 'أسفل', bold: 'عريض', hdr: 'صف عنوان', more: 'كل الخيارات' };
     const AI = { 'al-left': 'alL', 'al-center': 'alC', 'al-right': 'alR', 'va-top': 'vaT', 'va-middle': 'vaM', 'va-bottom': 'vaB' };
     /* ----- شريط الأدوات العائم (سطر واحد بالأيقونات) ----- */
     let tbar = null, tbarOn = false;
@@ -1994,7 +2044,7 @@ window.undo = undoAll; window.redo = redoAll;
         '<div class="sec">تعبئة الخلية</div><div class="sws"><button type="button" class="sw no" data-a="nobg" title="بدون خلفية"></button>' + sw + '<label class="cc" title="لون مخصّص"><input type="color" data-k="bg" value="#ffff00"></label></div>' +
         '<div class="sec">النص</div><div class="row"><div class="seg">' + S('al-left') + S('al-center') + S('al-right') + '</div><div class="seg">' + S('va-top') + S('va-middle') + S('va-bottom') + '</div><div class="seg">' + S('bold') + S('hdr') + '</div></div>' +
         '<div class="sec">الحدود</div><div class="row"><div class="seg">' + P('bw0', 'بدون') + P('bw1', 'رفيع') + P('bw2', 'وسط') + P('bw3', 'سميك') + '</div><label class="cc" title="لون الحدود"><input type="color" data-k="bc" value="#000000"></label></div><div class="sep"></div>' +
-        '<div class="g4">' + T('selrow') + T('selcol') + T('selall') + T('eq') + '</div><button type="button" class="tt dg wide" data-a="del">' + ico('del', 17) + '<span>حذف الجدول</span></button>';
+        '<div class="g4">' + T('selrow') + T('selcol') + T('selall') + '</div><div class="sec">الحجم</div><div class="g4">' + T('eq') + T('eqr') + '</div><button type="button" class="tt dg wide" data-a="del">' + ico('del', 17) + '<span>حذف الجدول</span></button>';
       document.body.appendChild(tmenu);
       tmenu.addEventListener('mousedown', e => { if (e.target.tagName !== 'INPUT') e.preventDefault(); });
       tmenu.addEventListener('click', e => { const bt = e.target.closest && e.target.closest('button'), b = tmenuB; if (!bt || !b) return; if (bt.dataset.bg) tColor(b, 'bg', bt.dataset.bg); else if (bt.dataset.a) tAct(b, bt.dataset.a); hideTblMenu(); });
@@ -2036,7 +2086,7 @@ window.undo = undoAll; window.redo = redoAll;
     function addBox(o) { const b = document.createElement('div'); b.className = 'mmN2box'; b.dataset.bid = o.id || newUid();
       b.style.left = (+o.x || 0) + 'px'; b.style.top = (+o.y || 0) + 'px'; b.style.width = (+o.w || 200) + 'px'; b.style.height = (+o.h || 90) + 'px';
       b.innerHTML = '<div class="mmBoxBody" contenteditable="true"></div><i class="mmBoxRz" contenteditable="false"></i>'; if (+o.ts) setBoxTs(b, +o.ts); const body = b.querySelector('.mmBoxBody'); body.innerHTML = safeNoteHtml(o.html || '');
-      if (o.tbl) { b.classList.add('tbl'); const rz0 = b.querySelector('.mmBoxRz'); if (rz0) rz0.remove(); b.__cell = body.querySelector('td,th'); tblWire(b, body); }
+      if (o.tbl) { b.classList.add('tbl'); const rz0 = b.querySelector('.mmBoxRz'); if (rz0) rz0.remove(); b.__cell = body.querySelector('td,th'); tblWire(b, body); tHandles(b); }
       const legacy = o.bo === undefined; setBoxStyle(b, { bg: legacy && o.bg === '#000000' ? 'transparent' : (o.bg || 'transparent'), bc: o.bc || '#000000', bo: legacy ? true : !!o.bo }); /* الشكل الافتراضي: إطار أسود + خلفية شفافة */
       const im = imgById(o.img); if (im) { const r = imgRect(im); b.dataset.img = o.img; b.dataset.rx = +o.rx || 0; b.dataset.ry = +o.ry || 0; b.style.left = (r.l + (+o.rx || 0)) + 'px'; b.style.top = (r.t + (+o.ry || 0)) + 'px'; }
       body.addEventListener('keydown', e => { e.stopPropagation(); if (!b.classList.contains('tbl')) return; if ((e.key === 'Delete' || e.key === 'Backspace') && b.__sel) { e.preventDefault(); const R = tRect(b); if (R) tCellsIn(R).forEach(x => { x.innerHTML = '<br>'; }); fitTbl(b); return; } if (e.key === 'Escape') { e.preventDefault(); getSelection().removeAllRanges(); body.blur(); b.__sel = null; tPaint(b); return; } /* Esc = خروج من الكتابة، وبعدها تسحب الجدول من أي مكان */ if (e.key !== 'Tab') return; const sn = getSelection().anchorNode, c = sn && (sn.nodeType === 1 ? sn : sn.parentElement).closest('td,th'); if (!c) return; e.preventDefault();
@@ -2053,20 +2103,19 @@ window.undo = undoAll; window.redo = redoAll;
         if (pts.size >= 2) { lpStop(); drag = null; const ids = [...pts.keys()], p1 = pts.get(ids[0]), p2 = pts.get(ids[1]), sz = boxSize(b); pinch = { d0: Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y)), w0: sz.w, h0: sz.h, ts0: +b.dataset.ts || 1 }; e.preventDefault(); return; } /* Pinch: بيبدأ من الحجم الفعلي، من غير قفزة */
         if (e.pointerType !== 'mouse') { lpStop(); const x0 = e.clientX, y0 = e.clientY; lp = { x0, y0, t: setTimeout(() => { lp = null; drag = null; openBoxMenu(b, x0, y0); }, 550) }; } /* Long Press: pointerdown + حركة صغيرة + زمن */
         if (b.classList.contains('tbl')) { if (e.pointerType === 'mouse' && e.button !== 0) return; const z = tblZone(b, e);
-          if (z.k === 'rz') { e.preventDefault(); e.stopPropagation(); lpStop(); drag = null; pinch = null; hideBoxMenu(); hideTblMenu(); const sz = boxSize(b); rs = { id: e.pointerId, x0: e.clientX, y0: e.clientY, w0: sz.w, h0: sz.h, ts0: +b.dataset.ts || 1, sx: z.sx, sy: z.sy, l0: parseFloat(b.style.left) || 0, t0: parseFloat(b.style.top) || 0 }; selectBox(b); try { b.setPointerCapture(e.pointerId); } catch (err) { } return; }
+          if (z.k === 'rz') { e.preventDefault(); e.stopPropagation(); lpStop(); drag = null; pinch = null; hideBoxMenu(); hideTblMenu(); selectBox(b); try { b.setPointerCapture(e.pointerId); } catch (err) { } tAreaStart(b, { sx: z.sx, sy: z.sy }, e); return; }
           if (z.k === 'move' && !b.dataset.img) { e.preventDefault(); selectBox(b); drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, l: parseFloat(b.style.left) || 0, t: parseFloat(b.style.top) || 0, moved: false, tap: true }; try { b.setPointerCapture(e.pointerId); } catch (err) { } }
           return; } /* جدول: ركن = تكبير، جسم/إطار = تحريك، كليك من غير سحب = كتابة */
         if (e.target === b && e.button === 0 && !b.dataset.img) { e.preventDefault(); drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, l: parseFloat(b.style.left) || 0, t: parseFloat(b.style.top) || 0, moved: false }; try { b.setPointerCapture(e.pointerId); } catch (err) { } } }); /* سحب من الإطار؛ المرتبطة ما بتتسحبش مستقلة */
       b.addEventListener('pointermove', e => { if (rs) { if (e.pointerId === rs.id) { e.preventDefault(); const z = mzZoom || 1;
-            if (rs.sx) { const rx = rs.sx * (e.clientX - rs.x0) / z / rs.w0, ry = rs.sy * (e.clientY - rs.y0) / z / rs.h0, k = Math.abs(rx) > Math.abs(ry) ? rx : ry; resizeBox(b, rs.w0 * (1 + k), 0, rs); const sz = boxSize(b); if (rs.sx < 0) b.style.left = Math.max(0, rs.l0 + rs.w0 - sz.w) + 'px'; if (rs.sy < 0) b.style.top = Math.max(0, rs.t0 + rs.h0 - sz.h) + 'px'; } /* تكبير الجدول من أي ركن بنسبة ثابتة */
-            else resizeBox(b, rs.w0 + (e.clientX - rs.x0) / z, rs.h0 + (e.clientY - rs.y0) / z, rs); } return; } /* Resize لحظي: click+drag مباشرة */
+            resizeBox(b, rs.w0 + (e.clientX - rs.x0) / z, rs.h0 + (e.clientY - rs.y0) / z, rs); } return; } /* Resize لحظي: click+drag مباشرة */
         if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (lp && Math.hypot(e.clientX - lp.x0, e.clientY - lp.y0) > 8) lpStop();
         if (pinch && pts.size >= 2) { e.preventDefault(); const ids = [...pts.keys()], p1 = pts.get(ids[0]), p2 = pts.get(ids[1]), sc = Math.hypot(p2.x - p1.x, p2.y - p1.y) / pinch.d0; resizeBox(b, pinch.w0 * sc, pinch.h0 * sc, pinch); return; } /* Pinch = Box + Text Scale */
         if (drag && e.pointerId === drag.id) { if (Math.abs(e.clientX - drag.x0) + Math.abs(e.clientY - drag.y0) > 3) drag.moved = true; b.style.left = Math.max(0, drag.l + (e.clientX - drag.x0) / (mzZoom || 1)) + 'px'; b.style.top = Math.max(0, drag.t + (e.clientY - drag.y0) / (mzZoom || 1)) + 'px'; } });
       const end = e => { if (rs && e.pointerId === rs.id) rs = null; pts.delete(e.pointerId); lpStop(); if (pinch && pts.size < 2) pinch = null; if (drag && e.pointerId === drag.id) { if (drag.tap && !drag.moved && e.type === 'pointerup') tblEnterEdit(b, e.clientX, e.clientY); drag = null; } }; /* Drag ≠ Pin: مفيش Attach تلقائي عند الإفلات */
       b.addEventListener('pointerup', end); b.addEventListener('pointercancel', end);
-      note2Boxes.appendChild(b); if (o.tbl) fitTbl(b); return b; }
+      note2Boxes.appendChild(b); if (o.tbl) { tNorm(b); fitTbl(b); } return b; }
     const serializeBoxes = () => [...note2Boxes.querySelectorAll('.mmN2box')].map(b => { const sz = boxSize(b); return Object.assign({ id: b.dataset.bid, html: safeNoteHtml(b.querySelector('.mmBoxBody').innerHTML), x: Math.round(parseFloat(b.style.left) || 0), y: Math.round(parseFloat(b.style.top) || 0), w: Math.round(sz.w), h: Math.round(sz.h), bg: b.dataset.bg || 'transparent', bc: b.dataset.bc || '#000000', bo: b.dataset.bo !== '0', img: b.dataset.img || null, rx: Math.round(+b.dataset.rx || 0), ry: Math.round(+b.dataset.ry || 0) }, b.dataset.ts ? { ts: +(+b.dataset.ts).toFixed(3) } : {}, b.classList.contains('tbl') ? { tbl: 1 } : {}); }); /* ts = Text Scale (اختياري؛ الصناديق القديمة بدونه = 1) */
     /* Migration: أي <img> قديمة جوه notesHtml بتتحول لطبقة مستقلة بنفس مكانها المرئي ومقاسها، ومتتمسحش */
     async function migrateLegacyImgs(id) { const legacy = [...note2Edit.querySelectorAll('img')]; if (!legacy.length) return;
