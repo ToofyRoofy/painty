@@ -2,7 +2,7 @@
    - بيحمّل كل ملفات التطبيق (بما فيها Paint) في الكاش أول مرة، وكل ملف ناقص بيتخطّاه من غير ما يبوّظ الباقي.
    - الصفحات: النت الأول (فتجيلك آخر نسخة)، ولو مفيش نت أو بطيء → من الكاش.
    - باقي الملفات: من الكاش فورًا وبيتحدّث في الخلفية. */
-const BUILD = '2026-10-26.2', CACHE = 'mm-cache-' + BUILD, BASE = new URL('./', self.location).href;
+const BUILD = '2026-10-27.1', CACHE = 'mm-cache-' + BUILD, BASE = new URL('./', self.location).href;
 const FILES = ['./', 'index.html', 'MindMap_merged.html', 'paint-EKTS-workspace.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 const abs = f => new URL(f, BASE).href;
 const keyOf = u => { const x = new URL(u); return x.origin + x.pathname; }; /* من غير ?query عشان ?diag=1 و ?v=123 ما يكرّروش الكاش */

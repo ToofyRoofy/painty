@@ -1752,6 +1752,7 @@ window.undo = undoAll; window.redo = redoAll;
 .mmBoxBody td.tcp,.mmBoxBody th.tcp{outline:2px dashed #16a34a;outline-offset:-2px}
 #mmTblBar{max-width:min(96vw,740px)}
 .mmBoxBody td.tgc,.mmBoxBody th.tgc{box-shadow:inset -3px 0 0 #3b82f6}
+.mmBoxBody td.tgl,.mmBoxBody th.tgl{box-shadow:inset 3px 0 0 #3b82f6}
 .mmBoxBody td.tgr,.mmBoxBody th.tgr{box-shadow:inset 0 -3px 0 #3b82f6}
 #mmTblDim{position:fixed;z-index:2300;display:none;pointer-events:none;direction:ltr;background:#1e293b;color:#fff;font:600 12px/1 system-ui,sans-serif;font-variant-numeric:tabular-nums;padding:6px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(15,23,42,.3);transform:translateX(-50%)}
 /* ===== جدول: تحديد + شريط أدوات + قائمة كليك يمين ===== */
@@ -1934,6 +1935,7 @@ window.undo = undoAll; window.redo = redoAll;
     function tPaint(b) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; t.querySelectorAll('.tsel,.tcur').forEach(x => x.classList.remove('tsel', 'tcur')); /* تحديد الخلايا = class مؤقت، بيتشال في الحفظ */
       if (b.__sel) { const R = tRect(b); if (R) tCellsIn(R).forEach(c => c.classList.add('tsel')); } else if (b.__cell && b.__cell.isConnected) b.__cell.classList.add('tcur'); }
     const TMINC = 24, TMINR = 8; /* أقل عرض عمود / ارتفاع صف (px جوه الجدول، قبل مقياس النص) */
+    const tRtl = t => getComputedStyle(t).direction === 'rtl'; /* جدول RTL: أول عمود (في الـDOM) على اليمين */
     const tWidthPx = t => /^[\d.]+px$/.test(t.style.width) ? parseFloat(t.style.width) : t.offsetWidth;
     function tCols(t, W, avail) { let cg = t.querySelector('colgroup'); if (!cg) { cg = document.createElement('colgroup'); t.prepend(cg); } while (cg.children.length < W) cg.appendChild(document.createElement('col')); while (cg.children.length > W) cg.lastChild.remove();
       const cols = [...cg.children], av = avail || t.offsetWidth || 200, ws = cols.map(c => { const q = c.style.width || '', n = parseFloat(q); return n > 0 ? (/%\s*$/.test(q) ? n / 100 * av : n) : 0; }), kn = ws.filter(x => x > 0), avg = kn.length ? kn.reduce((p, q) => p + q, 0) / kn.length : av / W, v = ws.map(x => Math.max(TMINC, x > 0 ? x : avg));
@@ -1942,7 +1944,7 @@ window.undo = undoAll; window.redo = redoAll;
     function tAct(b, a) { const R = tRect(b); if (!R) return; const { t, G } = R, cells = tCellsIn(R), cg0 = () => t.querySelector('colgroup'); let sel = null;
       if (a === 'copy' || a === 'copyall') { tCopy(b, a === 'copyall'); return; } if (a === 'paste' || a === 'pastenew') { tPasteBtn(b, a === 'pastenew'); return; }
       if (a === 'ra') tInsRow(t, R.r1); else if (a === 'rb') tInsRow(t, R.r2 + 1);
-      else if (a === 'ca' || a === 'cb') { const k = a === 'ca' ? R.c1 : R.c2 + 1, cg = cg0(); tInsCol(t, k); if (cg) { const col = document.createElement('col'); cg.children[k] ? cg.insertBefore(col, cg.children[k]) : cg.appendChild(col); tCols(t, tG(t).W); } }
+      else if (a === 'ca' || a === 'cb') { const k = (a === 'ca') !== tRtl(t) ? R.c1 : R.c2 + 1, cg = cg0(); tInsCol(t, k); if (cg) { const col = document.createElement('col'); cg.children[k] ? cg.insertBefore(col, cg.children[k]) : cg.appendChild(col); tCols(t, tG(t).W); } }
       else if (a === 'rd') { for (let r = R.r2; r >= R.r1; r--) if (!tDelRow(t, r)) break; }
       else if (a === 'cd') { for (let c = R.c2; c >= R.c1; c--) { if (!tDelCol(t, c)) break; const cg = cg0(); if (cg && cg.children[c]) { cg.children[c].remove(); tCols(t, tG(t).W); } } }
       else if (a === 'merge') { const m = tMerge(t, R); if (m) b.__cell = m; } else if (a === 'split') tSplit(t, G.g[R.r1][R.c1]);
@@ -1963,23 +1965,23 @@ window.undo = undoAll; window.redo = redoAll;
     function tBorder(b) { const R = tRect(b); if (!R) return; const cs = R.multi ? tCellsIn(R) : [...R.t.querySelectorAll('td,th')]; /* من غير تحديد = كل الجدول */
       cs.forEach(c => { c.style.border = tBd.w === 0 ? 'none' : tBd.w + 'px solid ' + tBd.c; }); fitTbl(b); }
     function tEdge(b, e) { const c = e.target.closest && e.target.closest('td,th'); if (!c || !b.contains(c)) return null; const r = c.getBoundingClientRect(), near = e.pointerType === 'mouse' ? 6 : 9, dR = Math.abs(e.clientX - r.right), dL = Math.abs(e.clientX - r.left), dB = Math.abs(e.clientY - r.bottom), dT = Math.abs(e.clientY - r.top); if (dR > near && dL > near && dB > near && dT > near) return null;
-      const t = c.closest('table'), G = tG(t), p = G.st.get(c), c1 = p[1] + (c.colSpan || 1), r1 = p[0] + (c.rowSpan || 1) - 1; if (dR <= near && c1 < G.W) return { k: 'col', i: c1 - 1, t, G }; if (dL <= near && p[1] > 0) return { k: 'col', i: p[1] - 1, t, G }; if (dB <= near && r1 < G.H - 1) return { k: 'row', i: r1, t, G }; if (dT <= near && p[0] > 0) return { k: 'row', i: p[0] - 1, t, G }; return null; } /* حدود داخلية بس — من الناحيتين (الخلية اللي فوق الخط واللي تحته) */
+      const t = c.closest('table'), G = tG(t), p = G.st.get(c), c1 = p[1] + (c.colSpan || 1), r1 = p[0] + (c.rowSpan || 1) - 1; const rtl = tRtl(t), eR = rtl ? dL : dR, eL = rtl ? dR : dL; /* في RTL حد الخلية اليمين هو حد العمود اللي قبلها في الـDOM */ if (eR <= near && c1 < G.W) return { k: 'col', i: c1 - 1, t, G, rtl }; if (eL <= near && p[1] > 0) return { k: 'col', i: p[1] - 1, t, G, rtl }; if (dB <= near && r1 < G.H - 1) return { k: 'row', i: r1, t, G }; if (dT <= near && p[0] > 0) return { k: 'row', i: p[0] - 1, t, G }; return null; } /* حدود داخلية بس — من الناحيتين (الخلية اللي فوق الخط واللي تحته) */
     const tEdgeCells = (G, k, i) => { const q = new Set(); for (let r = 0; r < G.H; r++) for (let c = 0; c < G.W; c++) { const x = G.g[r][c]; if (!x || q.has(x)) continue; const p = G.st.get(x); if (k === 'c' ? p[1] + (x.colSpan || 1) - 1 === i : p[0] + (x.rowSpan || 1) - 1 === i) q.add(x); } return [...q]; }; /* الخلايا اللي حدها اليمين/التحتاني هو الحد المسحوب */
     let tdim = null;
     function tDim(b, ev) { if (!tdim) { tdim = document.createElement('div'); tdim.id = 'mmTblDim'; document.body.appendChild(tdim); } if (!ev) { tdim.style.display = 'none'; return; } const t = b.querySelector('.mmBoxBody table'); if (!t) return; const k = (+b.dataset.ts || 1) * (mzZoom || 1), V = vvp();
       tdim.textContent = Math.round(tWidthPx(t)) + ' × ' + Math.round(t.getBoundingClientRect().height / k); tdim.style.display = 'block'; tdim.style.left = Math.max(V.l + 40, Math.min(V.l + V.w - 40, ev.clientX)) + 'px'; tdim.style.top = Math.max(V.t + 6, ev.clientY - (ev.pointerType === 'mouse' ? 38 : 70)) + 'px'; } /* شارة مقاس لحظية (عرض × ارتفاع) وقت السحب */
     function tStartResize(b, g, e) { const { t, G } = g, k = (+b.dataset.ts || 1) * (mzZoom || 1), x0 = e.clientX, y0 = e.clientY; let cols = null, w0 = null, h0 = 0;
       if (g.k === 'col') { cols = tCols(t, G.W); w0 = cols.map(c => parseFloat(c.style.width) || TMINC); } else h0 = t.rows[g.i].getBoundingClientRect().height / k;
-      const mark = tEdgeCells(G, g.k === 'col' ? 'c' : 'r', g.i); mark.forEach(c => c.classList.add(g.k === 'col' ? 'tgc' : 'tgr')); /* خط أزرق على الحد اللي بتسحبه */
+      const mark = tEdgeCells(G, g.k === 'col' ? 'c' : 'r', g.i); mark.forEach(c => c.classList.add(g.k === 'col' ? (g.rtl ? 'tgl' : 'tgc') : 'tgr')); /* خط أزرق على الحد اللي بتسحبه */
       const mv = ev => { if (ev.pointerId !== e.pointerId) return; ev.preventDefault();
-        if (g.k === 'col') { const i = g.i, nx = cols[i + 1], d = Math.max(TMINC - w0[i], (ev.clientX - x0) / k), dn = nx && ev.shiftKey ? Math.min(d, w0[i + 1] - TMINC) : d; /* عمود واحد بس والجدول يكبر/يصغر؛ Shift = على حساب العمود اللي جنبه */
-          cols[i].style.width = (w0[i] + dn).toFixed(2) + 'px'; if (nx) nx.style.width = (ev.shiftKey ? w0[i + 1] - dn : w0[i + 1]).toFixed(2) + 'px'; b.querySelector('.mmBoxBody table').style.width = cols.reduce((p, c) => p + parseFloat(c.style.width), 0).toFixed(2) + 'px'; }
+        if (g.k === 'col') { const i = g.rtl ? g.i + 1 : g.i, j = g.rtl ? g.i : g.i + 1, nx = cols[j], d = Math.max(TMINC - w0[i], (ev.clientX - x0) / k), dn = nx && ev.shiftKey ? Math.min(d, w0[j] - TMINC) : d; /* عمود واحد بس والجدول يكبر/يصغر؛ Shift = على حساب العمود اللي جنبه */
+          cols[i].style.width = (w0[i] + dn).toFixed(2) + 'px'; if (nx) nx.style.width = (ev.shiftKey ? w0[j] - dn : w0[j]).toFixed(2) + 'px'; b.querySelector('.mmBoxBody table').style.width = cols.reduce((p, c) => p + parseFloat(c.style.width), 0).toFixed(2) + 'px'; }
         else t.rows[g.i].style.height = Math.max(TMINR, h0 + (ev.clientY - y0) / k).toFixed(1) + 'px';
         fitTbl(b); tDim(b, ev); };
-      const up = ev => { if (ev && ev.pointerId !== e.pointerId) return; ['pointermove', 'pointerup', 'pointercancel'].forEach(n => document.removeEventListener(n, n === 'pointermove' ? mv : up, true)); mark.forEach(c => c.classList.remove('tgc', 'tgr')); tDim(b, null); };
+      const up = ev => { if (ev && ev.pointerId !== e.pointerId) return; ['pointermove', 'pointerup', 'pointercancel'].forEach(n => document.removeEventListener(n, n === 'pointermove' ? mv : up, true)); mark.forEach(c => c.classList.remove('tgc', 'tgl', 'tgr')); tDim(b, null); };
       document.addEventListener('pointermove', mv, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true); tDim(b, e); } /* سحب حدود العمود/الصف: كل واحد مستقل */
     /* تغيير مساحة الجدول: عرض (sx) و/أو ارتفاع (sy) مستقلين — الأعمدة/الصفوف بتتغيّر بالتناسب والخط ثابت. Shift = العمود/الصف الأخير بس */
-    function tAreaStart(b, d, e) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; const G = tG(t), ts = +b.dataset.ts || 1, k = ts * (mzZoom || 1), cols = tCols(t, G.W), c0 = cols.map(c => parseFloat(c.style.width) || TMINC), W0 = c0.reduce((p, q) => p + q, 0), rows = [...t.rows], r0 = rows.map(r => r.getBoundingClientRect().height / k), R0 = r0.reduce((p, q) => p + q, 0) || 1, H0 = t.getBoundingClientRect().height / k, l0 = parseFloat(b.style.left) || 0, tp0 = parseFloat(b.style.top) || 0, last = cols.length - 1, lr = rows.length - 1;
+    function tAreaStart(b, d, e) { const t = b.querySelector('.mmBoxBody table'); if (!t) return; const G = tG(t), ts = +b.dataset.ts || 1, k = ts * (mzZoom || 1), cols = tCols(t, G.W), c0 = cols.map(c => parseFloat(c.style.width) || TMINC), W0 = c0.reduce((p, q) => p + q, 0), rows = [...t.rows], r0 = rows.map(r => r.getBoundingClientRect().height / k), R0 = r0.reduce((p, q) => p + q, 0) || 1, H0 = t.getBoundingClientRect().height / k, l0 = parseFloat(b.style.left) || 0, tp0 = parseFloat(b.style.top) || 0, last = tRtl(t) ? 0 : cols.length - 1, lr = rows.length - 1;
       const mv = ev => { if (ev.pointerId !== e.pointerId) return; ev.preventDefault();
         if (d.sx) { const dx = d.sx * (ev.clientX - e.clientX) / k; let tw = Math.max(cols.length * TMINC, W0 + dx); if (d.sx < 0) tw = Math.min(tw, W0 + l0 / ts); /* من اليسار: ما يخرجش برا الحافة */
           const v = ev.shiftKey && d.sx > 0 ? c0.map((x, i) => i === last ? Math.max(TMINC, x + dx) : x) : c0.map(x => Math.max(TMINC, x * tw / W0));
@@ -2000,13 +2002,13 @@ window.undo = undoAll; window.redo = redoAll;
     const tFlash = cs => { cs.forEach(c => c.classList.add('tcp')); setTimeout(() => cs.forEach(c => c.classList.remove('tcp')), 900); };
     function tCopyModel(b, whole) { const R = tRect(b); if (!R) return null; const { t, G } = R, r1 = whole ? 0 : R.r1, r2 = whole ? G.H - 1 : R.r2, c1 = whole ? 0 : R.c1, c2 = whole ? G.W - 1 : R.c2, cg = t.querySelector('colgroup');
       const ws = []; for (let c = c1; c <= c2; c++) ws.push(cg && cg.children[c] ? cg.children[c].style.width : '');
-      const tb = document.createElement('table'), bd = document.createElement('tbody'), tsv = [];
+      const tb = document.createElement('table'), bd = document.createElement('tbody'), tsv = [], rtl = tRtl(t); if (rtl) tb.setAttribute('dir', 'rtl');
       if (ws.every(w => /px$/.test(w))) { tb.style.width = ws.reduce((p, w) => p + parseFloat(w), 0).toFixed(2) + 'px'; const g = document.createElement('colgroup'); ws.forEach(w => { const co = document.createElement('col'); co.style.width = w; g.appendChild(co); }); tb.appendChild(g); }
       tb.appendChild(bd);
       for (let r = r1; r <= r2; r++) { const tr = document.createElement('tr'), row = []; if (t.rows[r] && t.rows[r].style.height) tr.style.height = t.rows[r].style.height;
         for (let c = c1; c <= c2; c++) { const x = G.g[r] && G.g[r][c], p = x && G.st.get(x); if (p && p[0] === r && p[1] === c) { const k = x.cloneNode(true); k.classList.remove('tsel', 'tcur', 'tgc', 'tgr', 'tcp'); if (!k.getAttribute('class')) k.removeAttribute('class'); tr.appendChild(k); row.push(tTxt(x)); } else row.push(''); }
         bd.appendChild(tr); tsv.push(row.join('\t')); }
-      return { html: tb.outerHTML, tsv: tsv.join('\n'), cells: whole ? [...t.querySelectorAll('td,th')] : tCellsIn(R) }; }
+      return { html: tb.outerHTML, tsv: tsv.join('\n'), rtl, ts: +b.dataset.ts || 1, box: { bg: b.dataset.bg || 'transparent', bc: b.dataset.bc || '#000000', bo: b.dataset.bo !== '0' }, cells: whole ? [...t.querySelectorAll('td,th')] : tCellsIn(R) }; }
     function tLegacyCopy(m) { let ok = false; const h = e => { e.clipboardData.setData('text/html', m.html); e.clipboardData.setData('text/plain', m.tsv); e.preventDefault(); ok = true; }, ta = document.createElement('textarea'), ae = document.activeElement, sel = getSelection(), saved = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
       ta.value = m.tsv || ' '; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'; document.body.appendChild(ta); ta.select(); document.addEventListener('copy', h, true);
       try { document.execCommand('copy'); } catch (e) { } document.removeEventListener('copy', h, true); ta.remove();
@@ -2014,20 +2016,25 @@ window.undo = undoAll; window.redo = redoAll;
     async function tCopy(b, whole) { const m = tCopyModel(b, whole); if (!m) return false; let ok = false;
       try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([m.html], { type: 'text/html' }), 'text/plain': new Blob([m.tsv], { type: 'text/plain' }) })]); ok = true; } else if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(m.tsv); ok = true; } }
       catch (e) { try { await navigator.clipboard.writeText(m.tsv); ok = true; } catch (e2) { } }
-      if (!ok) ok = tLegacyCopy(m); tClip = { html: m.html, tsv: m.tsv, sys: ok }; tFlash(m.cells); return true; }
-    function tModelFrom(html, txt) { let t = null, plain = false;
-      if (html && /<table/i.test(html)) { const tp = document.createElement('template'); tp.innerHTML = safeNoteHtml(html); t = tp.content.querySelector('table'); }
+      if (!ok) ok = tLegacyCopy(m); tClip = { html: m.html, tsv: m.tsv, rtl: m.rtl, ts: m.ts, box: m.box, sys: ok }; tFlash(m.cells); return true; }
+    function tRawRtl(h) { const tag = /<table\b[^>]*>/i.exec(h); if (!tag) return false; const q = tag[0], mso = /mso-table-dir\s*:\s*(\w+)/i.exec(q); if (mso) return /bidi|rtl/i.test(mso[1]); /* Word: mso-table-dir:bidi = جدول من اليمين */
+      if (/\bdir\s*=\s*["']?rtl\b/i.test(q) || /direction\s*:\s*rtl/i.test(q)) return true; if (/\bdir\s*=\s*["']?ltr\b/i.test(q) || /direction\s*:\s*ltr/i.test(q)) return false;
+      const up = [...h.slice(0, tag.index).matchAll(/<(?:html|body|div|section|center)\b[^>]*>/gi)]; for (let i = up.length - 1; i >= 0; i--) { const d = /\bdir\s*=\s*["']?(rtl|ltr)\b/i.exec(up[i][0]); if (d) return d[1].toLowerCase() === 'rtl'; } return false; }
+    function tModelFrom(html, txt) { let t = null, plain = false, rtl = false;
+      if (html && /<table/i.test(html)) { rtl = tRawRtl(html); const tp = document.createElement('template'); tp.innerHTML = safeNoteHtml(html); t = tp.content.querySelector('table'); if (t) { if (rtl) t.setAttribute('dir', 'rtl'); else if (t.getAttribute('dir') === 'rtl') rtl = true; } }
       if (!t && txt) { const rows = txt.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').map(r => r.split('\t')), W = Math.max(...rows.map(r => r.length)); plain = true; t = document.createElement('table'); const bd = document.createElement('tbody'); t.appendChild(bd);
         rows.forEach(r => { const tr = document.createElement('tr'); for (let i = 0; i < W; i++) { const td = document.createElement('td'); td.textContent = r[i] || ''; if (!td.textContent) td.innerHTML = '<br>'; tr.appendChild(td); } bd.appendChild(tr); }); }
       if (!t || !t.rows.length) return null;
       t.querySelectorAll('td,th').forEach(c => { const q = (c.getAttribute('style') || '').replace(/(^|;)\s*(max-)?(width|height)\s*:[^;]*/gi, '$1').replace(/^;+/, '').trim(); q ? c.setAttribute('style', q) : c.removeAttribute('style'); }); /* مقاسات الخلايا من برّه ما تدخلش */
       const G = tG(t); if (!G.W || G.H > 200 || G.W > 40) return null; const cells = []; G.st.forEach((p, c) => cells.push({ r: p[0], c: p[1], rs: Math.max(1, c.rowSpan || 1), cs: Math.max(1, c.colSpan || 1), html: c.innerHTML, style: c.getAttribute('style') || '' }));
-      return { t, h: G.H, w: G.W, cells, plain }; }
-    function tModelNow(html, txt) { const mine = () => tClip && tModelFrom(tClip.html, tClip.tsv), rich = /<table/i.test(html || '') || /\t/.test(txt || '');
-      if (tClip && ((txt === tClip.tsv && !/<table/i.test(html || '')) || (!tClip.sys && !rich))) return mine() || tModelFrom(html, txt); /* آخر نسخة من التطبيق: لو الـClipboard فيه نفس النص من غير تنسيق، أو لو النسخ للـClipboard فشل ومفيش جدول/Tab جديد */
+      return { t, h: G.H, w: G.W, cells, plain, rtl }; }
+    function tModelNow(html, txt) { const nz = q => (q || '').replace(/\r\n?/g, '\n').replace(/\n+$/, ''), rich = /<table/i.test(html || '') || /\t/.test(txt || ''),
+        mine = () => { if (!tClip) return null; const m = tModelFrom(tClip.html, tClip.tsv); if (m) { m.rtl = !!tClip.rtl; m.ts = tClip.ts; m.box = tClip.box; } return m; }; /* نسخة التطبيق فيها كل حاجة: الاتجاه ومقياس النص والمقاسات */
+      if (tClip && (nz(txt) === nz(tClip.tsv) || (!tClip.sys && !rich))) return mine() || tModelFrom(html, txt); /* الـClipboard فيه نفس اللي نسخناه (أو النسخ للـClipboard فشل ومفيش جدول/Tab جديد) */
       return tModelFrom(html, txt) || mine(); }
+    const tMirror = m => Object.assign({}, m, { rtl: !m.rtl, cells: m.cells.map(c => Object.assign({}, c, { c: m.w - c.c - c.cs })) }); /* قلب ترتيب الأعمدة (RTL ⇄ LTR) عشان الشكل يفضل زي ما هو */
     function tAddCol(t, k) { tInsCol(t, k); const cg = t.querySelector('colgroup'); if (cg) { const col = document.createElement('col'); cg.children[k] ? cg.insertBefore(col, cg.children[k]) : cg.appendChild(col); tCols(t, tG(t).W); } }
-    function tPasteInto(b, m) { const R = tRect(b); if (!R || !m) return false; const t = R.t, fill = m.cells.length === 1 && R.multi, r0 = R.r1, c0 = R.c1, H = fill ? R.r2 - R.r1 + 1 : m.h, W = fill ? R.c2 - R.c1 + 1 : m.w; let G = tG(t);
+    function tPasteInto(b, m) { const R = tRect(b); if (!R || !m) return false; const t = R.t; if (!m.plain && m.cells.length > 1 && !!m.rtl !== tRtl(t)) m = tMirror(m); const fill = m.cells.length === 1 && R.multi, r0 = R.r1, c0 = R.c1, H = fill ? R.r2 - R.r1 + 1 : m.h, W = fill ? R.c2 - R.c1 + 1 : m.w; let G = tG(t);
       while (G.H < r0 + H) { tInsRow(t, G.H); G = tG(t); } while (G.W < c0 + W) { tAddCol(t, G.W); G = tG(t); }
       for (let go = true, n = 0; go && n < 300; n++) { go = false; G = tG(t); scan: for (let r = r0; r < r0 + H; r++) for (let c = c0; c < c0 + W; c++) { const x = G.g[r][c]; if (x && ((x.rowSpan || 1) > 1 || (x.colSpan || 1) > 1)) { tSplit(t, x); go = true; break scan; } } } /* الخلايا المدموجة في المكان ده بتتفصل الأول */
       G = tG(t); const put = (x, c) => { x.innerHTML = c.html || '<br>'; if (!m.plain) { if (c.style) x.setAttribute('style', c.style); else x.removeAttribute('style'); } };
@@ -2036,8 +2043,8 @@ window.undo = undoAll; window.redo = redoAll;
         m.cells.forEach(c => put(G.g[r0 + c.r][c0 + c.c], c)); m.cells.forEach(c => { if (c.rs > 1 || c.cs > 1) tMerge(t, { G: tG(t), r1: r0 + c.r, c1: c0 + c.c, r2: r0 + c.r + c.rs - 1, c2: c0 + c.c + c.cs - 1 }); }); }
       G = tG(t); const a = G.g[r0][c0], f = G.g[Math.min(G.H - 1, r0 + H - 1)][Math.min(G.W - 1, c0 + W - 1)]; b.__cell = a; b.__sel = a === f ? null : { a, f };
       tPaint(b); fitTbl(b); const cs = []; for (let r = r0; r < r0 + H; r++) for (let c = c0; c < c0 + W; c++) { const x = G.g[r] && G.g[r][c]; if (x && !cs.includes(x)) cs.push(x); } tFlash(cs); return true; }
-    function tPasteNew(b, m) { if (!m) return false; const t = m.t.cloneNode(true), wpx = /^[\d.]+px$/.test(t.style.width) ? parseFloat(t.style.width) : Math.min(520, Math.max(160, 110 * m.w)), z = mzZoom || 1, cw = note2Wrap.clientWidth || 600;
-      const nb = addBox({ tbl: 1, bo: false, html: t.outerHTML, x: Math.max(0, (note2Wrap.scrollLeft + cw / 2) / z - wpx / 2), y: Math.max(0, note2Wrap.scrollTop / z + 40), w: wpx }); deselectImage(); selectBox(nb); tFlash([...nb.querySelectorAll('td,th')]); return true; }
+    function tPasteNew(b, m) { if (!m) return false; const t = m.t.cloneNode(true), ts = m.ts > 0 ? m.ts : 1, bx = m.box || {}, wpx = (/^[\d.]+px$/.test(t.style.width) ? parseFloat(t.style.width) : Math.min(520, Math.max(160, 110 * m.w))) * ts, z = mzZoom || 1, cw = note2Wrap.clientWidth || 600; /* نفس المقاس: الأعمدة × مقياس النص */
+      const nb = addBox({ tbl: 1, bo: !!bx.bo, bg: bx.bg || 'transparent', bc: bx.bc || '#000000', ts: ts !== 1 ? ts : 0, html: t.outerHTML, x: b && b.isConnected ? parseFloat(b.style.left) || 0 : Math.max(0, (note2Wrap.scrollLeft + cw / 2) / z - wpx / 2), y: b && b.isConnected ? (parseFloat(b.style.top) || 0) + (parseFloat(b.style.height) || 0) + 24 : Math.max(0, note2Wrap.scrollTop / z + 40), w: wpx }); deselectImage(); selectBox(nb); try { nb.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { } /* تحت الجدول الأصلي مباشرة، من غير ما يغطيه */ tFlash([...nb.querySelectorAll('td,th')]); return true; }
     async function tPasteBtn(b, asNew) { let html = '', txt = '';
       try { if (navigator.clipboard && navigator.clipboard.read) { for (const it of await navigator.clipboard.read()) { if (!html && it.types.includes('text/html')) html = await (await it.getType('text/html')).text(); if (!txt && it.types.includes('text/plain')) txt = await (await it.getType('text/plain')).text(); } } else if (navigator.clipboard && navigator.clipboard.readText) txt = await navigator.clipboard.readText(); }
       catch (e) { try { txt = await navigator.clipboard.readText(); } catch (e2) { } }
